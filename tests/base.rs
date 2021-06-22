@@ -25,7 +25,7 @@ pub fn test_result() -> String {
 }
 
 fn copy_hook_lib() -> io::Result<()> {
-    std::fs::copy(Path::new("target/i686-pc-windows-msvc/debug/hook_test.dll"), Path::new(TEST_WORK_DIR).join("hook_test.dll"))?;
+    std::fs::copy(Path::new("target/i686-pc-windows-msvc/debug/dm_jitaux.dll"), Path::new(TEST_WORK_DIR).join("dm_jitaux.dll"))?;
     io::Result::Ok(())
 }
 

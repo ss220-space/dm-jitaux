@@ -1,5 +1,5 @@
 [package]
-name = "hook-test"
+name = "dm-jitaux"
 version = "0.1.0"
 authors = ["Simon Ogorodnik <simon.ogorodnik@gmail.com>"]
 edition = "2018"
