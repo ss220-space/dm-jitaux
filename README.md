@@ -55,6 +55,7 @@ System libraries:
     sudo dpkg --add-architecture i386
     sudo apt-get update
     sudo apt-get install zlib1g-dev:i386 libssl-dev:i386 pkg-config:i386
+    sudo apt-get install gcc-multilib g++-multilib
     ```
 
 * Other Linux distributions install the appropriate **32-bit development** and **32-bit runtime** packages.
@@ -85,8 +86,10 @@ cmake --build . --target install
 
 Full guide: [Building LLVM with CMake](https://llvm.org/docs/CMake.html) 
 
-#### Linux
-TO-DO
+#### Ubuntu and Debian
+```sh
+sudo apt install llvm-12-dev
+```
 
 ### Compiling
 
@@ -97,7 +100,11 @@ $env:LLVM_SYS_120_PREFIX = "C:\LLVM" # LLVM prefix specified before
 cargo build --debug --target i686-pc-windows-msvc
 cargo test --debug --target i686-pc-windows-msvc -- --test-threads=1
 ```
-
+#### Windows
+```sh
+cargo build --debug --target i686-unknown-linux-gnu
+cargo test --debug --target i686-unknown-linux-gnu -- --test-threads=1
+```
 
 ## See also
 ### DM Opcode relative frequency table
