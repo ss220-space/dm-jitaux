@@ -1,0 +1,24 @@
+[package]
+name = "hook-test"
+version = "0.1.0"
+authors = ["Simon Ogorodnik <simon.ogorodnik@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+auxtools = { path = "../auxtools/auxtools" }
+simple-logging = { version = "2.0.2" }
+log = { version = "0.4.14" }
+log-panics = { version = "2", features = ["with-backtrace"] }
+rayon = "1.5"
+rand = "0.8.3"
+measure_time = "0.6.0"
+dmasm = { git = "https://github.com/willox/dmasm" }
+inkwell = { git = "https://github.com/TheDan64/inkwell", default-features = false, branch = "master", features = ["llvm12-0", "target-x86"] }
+llvm-sys = "120"
+winapi = "0.3.9"
+ouroboros = "0.9.3"
+
+[lib]
+crate-type = ["cdylib"]
