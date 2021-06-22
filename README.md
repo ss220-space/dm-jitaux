@@ -1,3 +1,5 @@
+![WIP](https://img.shields.io/badge/-WIP-yellow) 
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)
 # dm-jitaux
 
 dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
@@ -58,8 +60,8 @@ System libraries:
 * Other Linux distributions install the appropriate **32-bit development** and **32-bit runtime** packages.
 
 ## Building
-###LLVM
-####Windows
+### LLVM
+#### Windows
 CMake required, can be downloaded from [cmake.org](https://cmake.org/download/)
 
 You need to build LLVM 12.0.0 on Windows with x32 target and MD CRT linking
@@ -83,12 +85,12 @@ cmake --build . --target install
 
 Full guide: [Building LLVM with CMake](https://llvm.org/docs/CMake.html) 
 
-####Linux
+#### Linux
 TO-DO
 
-###Compiling
+### Compiling
 
-####Windows
+#### Windows
 ```sh
 # PowerShell
 $env:LLVM_SYS_120_PREFIX = "C:\LLVM" # LLVM prefix specified before
@@ -97,12 +99,13 @@ cargo test --debug --target i686-pc-windows-msvc -- --test-threads=1
 ```
 
 
-##See also
+## See also
 ### DM Opcode relative frequency table
-[opcode_counts.txt]
+[opcode_counts.txt](opcode_counts.txt)
 
 ## License
 
 dm-jitaux is licensed under the  [AGPL-3.0 License](https://ru.wikipedia.org/wiki/GNU_Affero_General_Public_License). See [LICENSE](https://github.com/ss220-space/dm-jitaux/blob/main/LICENSE)  for more details.
 
-
+[Rust]: https://rust-lang.org
+[msvc]: https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=15
