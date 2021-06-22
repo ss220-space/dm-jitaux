@@ -21,7 +21,13 @@ The [Rust] compiler:
     ```sh
     curl https://sh.rustup.rs -sSfo rustup-init.sh
     chmod +x rustup-init.sh
+    # Nightly toolchain is required
     ./rustup-init.sh
+    ```
+    Alternatively without saving
+    ```
+    # Nightly toolchain is required
+    curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly
     ```
 
 1. Set the default compiler to **32-bit**:
