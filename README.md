@@ -1,6 +1,6 @@
 # dm-jitaux
 
-dm-jitaux is a Rust-based JIT compiler using [auxtools](https://github.com/willox/auxtools) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
+dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
 
 ## License
 
