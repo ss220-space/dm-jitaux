@@ -8,7 +8,6 @@ fn test_total_moles_func() {
     assert_eq!(test_result().trim(), "63")
 }
 
-
 #[test]
 fn test_jz() {
     run_hook_test(vec!("test_jz.dm"));
@@ -19,4 +18,10 @@ fn test_jz() {
 fn test_args() {
     run_hook_test(vec!("test_args.dm"));
     assert_eq!(test_result().trim(), "11\n15.5")
+}
+
+#[test]
+fn test_push_val() {
+    run_hook_test(vec!("push_val.dm"));
+    assert_eq!(test_result().trim(), "Hello, world!")
 }

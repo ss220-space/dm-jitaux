@@ -20,6 +20,7 @@ use std::ptr::{NonNull, drop_in_place};
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 use inkwell::AddressSpace::Generic;
+use inkwell::debug_info::{DILocation, DebugInfoBuilder, DWARFSourceLanguage};
 
 #[hook("/proc/compile_proc")]
 pub fn compile_and_call(proc_name: auxtools::Value) {
@@ -255,6 +256,27 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 // self.dbg("PushInt");
                 // self.dbg_val(out_val);
             },
+            DMIR::PushVal(op) => {
+                let out = self.builder.build_alloca(self.val_type, "push_val");
+                let out_val = self.builder.build_load(out, "load_out").into_struct_value();
+                let out_val = self.builder.build_insert_value(
+                    out_val,
+                    self.context.i8_type().const_int(op.tag as u64, false),
+                    0,
+                    "store_tag"
+                ).unwrap();
+
+
+                let out_val = self.builder.build_insert_value(
+                    out_val,
+                    self.context.i32_type().const_int(op.data as u64, false),
+                    1,
+                    "store_out"
+                ).unwrap();
+
+                self.builder.build_store(out, out_val);
+                self.stack_loc.push(out);
+            }
             // Return stack top from proc
             DMIR::Ret => {
 
@@ -352,6 +374,7 @@ enum DMIR {
     GetCacheField(u32),
     FloatAdd,
     PushInt(i32),
+    PushVal(dmasm::operands::ValueOpRaw),
     Ret,
     Test,
     JZ(String),
@@ -472,6 +495,9 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
                     }
                     Instruction::PushInt(i32) => {
                         irs.push(DMIR::PushInt(i32))
+                    }
+                    Instruction::PushVal(op) => {
+                        irs.push(DMIR::PushVal(op.raw.unwrap()))
                     }
                     _ => {
                         log::info!("Unsupported insn {}", insn);
