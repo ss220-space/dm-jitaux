@@ -19,14 +19,32 @@ const TEST_DATA_DIR: &str = "tests/testData/";
 
 pub fn test_result() -> String {
     let path = Path::new(TEST_WORK_DIR).join("result.txt");
-    let res = fs::read_to_string(path);
-    assert!(res.is_ok());
-    res.unwrap().replace("\r\n","\n")
+    let res = fs::read_to_string(path).unwrap();
+    res.replace("\r\n","\n")
+}
+
+fn lib_path() -> &'static Path {
+    if cfg!(target_os = "windows") {
+        Path::new("target/i686-pc-windows-msvc/debug/dm_jitaux.dll")
+    } else {
+        Path::new("target/i686-unknown-linux-gnu/debug/libdm_jitaux.so")
+    }
 }
 
 fn copy_hook_lib() -> io::Result<()> {
-    std::fs::copy(Path::new("target/i686-pc-windows-msvc/debug/dm_jitaux.dll"), Path::new(TEST_WORK_DIR).join("dm_jitaux.dll"))?;
+    let lib_path = lib_path();
+    std::fs::copy(lib_path.clone(), Path::new(TEST_WORK_DIR).join(lib_path.file_name().unwrap().to_str().unwrap()))?;
     io::Result::Ok(())
+}
+
+fn cmd_dm() -> Command {
+    if cfg!(target_os = "windows") {
+        Command::new(format!("{}\\bin\\dreamdaemon.exe", byond_path()))
+    } else {
+        let mut cmd = Command::new(format!("{}/bin/byondexec", byond_path()));
+        cmd.arg(format!("{}/bin/DreamMaker", byond_path()));
+        cmd
+    }
 }
 
 fn compile_files(files: Vec<&str>) -> io::Result<ExitStatus> {
@@ -34,25 +52,47 @@ fn compile_files(files: Vec<&str>) -> io::Result<ExitStatus> {
     std::fs::create_dir_all(test_dme_path.parent().unwrap())?;
     let mut dme = File::create(test_dme_path.clone())?;
 
+    writeln!(dme, "#define DMJIT_LIB \"{}\"", lib_path().file_name().unwrap().to_str().unwrap())?;
+
     for file_name in files {
         let src = Path::new(TEST_DATA_DIR).join(file_name);
         let target = Path::new(TEST_WORK_DIR).join(file_name);
         std::fs::create_dir_all(target.parent().unwrap())?;
         std::fs::copy(src, target)?;
-        write!(dme, "#include \"{}\"\n", file_name)?;
+        writeln!(dme, "#include \"{}\"", file_name)?;
     }
 
 
-    Command::new("C:\\Program Files (x86)\\BYOND\\bin\\dm.exe")
-        .args(&[test_dme_path.to_str().unwrap()])
+    cmd_dm()
+        .arg(test_dme_path.to_str().unwrap())
         .spawn()
         .unwrap()
         .wait()
 }
 
+fn byond_path() -> String {
+    let byond_path = std::env::var("BYOND_PATH");
+    if cfg!(target_os = "windows") {
+        byond_path.unwrap_or("C:\\Program Files (x86)\\BYOND".to_string())
+    } else {
+        byond_path.unwrap()
+    }
+}
+
+fn cmd_dreamdaemon() -> Command {
+    if cfg!(target_os = "windows") {
+        Command::new(format!("{}\\bin\\dreamdaemon.exe", byond_path()))
+    } else {
+        let mut cmd = Command::new(format!("{}/bin/byondexec", byond_path()));
+        cmd.arg(format!("{}/bin/DreamDaemon", byond_path()));
+        cmd
+    }
+}
+
 fn run_dm() -> io::Result<ExitStatus> {
-    Command::new("C:\\Program Files (x86)\\BYOND\\bin\\dreamdaemon.exe")
-        .args(&[Path::new(TEST_WORK_DIR).join("test.dmb").to_str().unwrap(), "-trusted"])
+    cmd_dreamdaemon()
+        .arg(Path::new(TEST_WORK_DIR).join("test.dmb").to_str().unwrap())
+        .arg("-trusted")
         .spawn()?
         .wait()
 }

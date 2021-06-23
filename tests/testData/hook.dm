@@ -1,5 +1,5 @@
 /proc/hook_main_init()
-	world.log << call("dm_jitaux.dll", "auxtools_init")()
+	world.log << call(DMJIT_LIB, "auxtools_init")()
 	hook_log_init()
 // INIT
 /proc/hook_log_init()
