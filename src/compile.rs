@@ -82,6 +82,14 @@ struct ModuleContext<'ctx> {
     _pin: PhantomPinned
 }
 
+impl<'ctx> Drop for ModuleContext<'ctx> {
+    fn drop(&mut self) {
+        self.execution_engine = Option::None;
+        self.module = Option::None;
+        drop(self.context_ref);
+    }
+}
+
 impl ModuleContext<'static> {
 
     fn new() -> Pin<Box<ModuleContext<'static>>> {
