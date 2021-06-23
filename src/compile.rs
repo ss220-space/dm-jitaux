@@ -21,6 +21,7 @@ use std::marker::PhantomPinned;
 use std::pin::Pin;
 use inkwell::AddressSpace::Generic;
 use inkwell::debug_info::{DILocation, DebugInfoBuilder, DWARFSourceLanguage};
+use auxtools::raw_types::values::ValueTag;
 
 #[hook("/proc/compile_proc")]
 pub fn compile_and_call(proc_name: auxtools::Value) {
@@ -143,6 +144,25 @@ thread_local! {
     static LLVM_CONTEXT: Pin<Box<ModuleContext<'static>>> = ModuleContext::new()
 }
 
+struct MetaValue<'ctx> {
+    tag: IntValue<'ctx>,
+    data: IntValue<'ctx>
+}
+
+impl MetaValue<'_> {
+    fn new<'a>(tag: IntValue<'a>, data: IntValue<'a>) -> MetaValue<'a> {
+        return MetaValue {
+            tag,
+            data
+        }
+    }
+
+    fn with_tag<'a>(tag: auxtools::raw_types::values::ValueTag, data: IntValue<'a>, code_gen: &mut CodeGen<'a, '_>) -> MetaValue<'a> {
+        let tag = code_gen.context.i8_type().const_int(tag as u64, false);
+        return Self::new(tag, data)
+    }
+}
+
 impl<'ctx> CodeGen<'ctx, '_> {
 
     fn create<'a>(context: &'ctx Context, module: &'a Module<'ctx>, builder: Builder<'ctx>, execution_engine: &'a ExecutionEngine<'ctx>) -> CodeGen<'ctx, 'a> {
@@ -169,6 +189,42 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
     fn dbg_val(&mut self, val: StructValue<'ctx>) {
         self.builder.build_call(self.module.get_function("<intrinsic>/debug_val").unwrap(), &[val.into()], "call_dbg");
+    }
+
+
+    fn emit_load_meta_value(&mut self, from: StructValue<'ctx>) -> MetaValue<'ctx> {
+        let tag = self.builder.build_extract_value(from, 0, "get_tag").unwrap().into_int_value();
+        let data = self.builder.build_extract_value(from, 1, "get_data").unwrap().into_int_value();
+        return MetaValue::new(tag, data);
+    }
+
+    fn emit_store_meta_value(&mut self, from: MetaValue<'ctx>) -> StructValue<'ctx> {
+        let out_val = self.val_type.const_zero();
+        let out_val = self.builder.build_insert_value(out_val, from.tag, 0, "set_tag").unwrap().into_struct_value();
+        let out_val = self.builder.build_insert_value(out_val, from.data, 1, "set_data").unwrap().into_struct_value();
+
+        return out_val;
+    }
+
+    fn emit_bin_op<F>(&mut self, op: F)
+        where F : FnOnce(MetaValue<'ctx>, MetaValue<'ctx>, &mut Self) -> MetaValue<'ctx>
+    {
+        let first = self.stack_loc.pop().unwrap();
+        let second = self.stack_loc.pop().unwrap();
+
+        let first_struct = self.builder.build_load(first, "first").into_struct_value();
+        let first_meta = self.emit_load_meta_value(first_struct);
+
+        let second_struct = self.builder.build_load(second, "second").into_struct_value();
+        let second_meta = self.emit_load_meta_value(second_struct);
+
+        let result_meta = op(first_meta, second_meta, self);
+
+        let out = self.builder.build_alloca(self.val_type, "out");
+        let out_val = self.emit_store_meta_value(result_meta);
+        self.builder.build_store(out, out_val);
+
+        self.stack_loc.push(out);
     }
 
     fn emit(&mut self, ir: DMIR, func: FunctionValue<'ctx>) {
@@ -206,35 +262,28 @@ impl<'ctx> CodeGen<'ctx, '_> {
             },
             // Read two values from stack, add them together, put result to stack
             DMIR::FloatAdd => {
-                let first = self.stack_loc.pop().unwrap();
-                let second = self.stack_loc.pop().unwrap();
+                self.emit_bin_op(|first, second, code_gen| {
+                    let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
+                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
 
-                let first_struct = self.builder.build_load(first, "first").into_struct_value();
-                let first_num = self.builder.build_extract_value(first_struct, 1, "get_num_first").unwrap().into_int_value();
+                    let result_value = code_gen.builder.build_float_add(first_f32, second_f32, "add");
+                    let result_i32 = code_gen.builder.build_bitcast(result_value, code_gen.context.i32_type(), "result_i32").into_int_value();
 
-                let second_struct = self.builder.build_load(second, "second").into_struct_value();
-                let second_num = self.builder.build_extract_value(second_struct, 1, "get_num_second").unwrap().into_int_value();
-
-                let first_f32 = self.builder.build_bitcast(first_num, self.context.f32_type(), "first_f32").into_float_value();
-                let second_f32 = self.builder.build_bitcast(second_num, self.context.f32_type(), "second_f32").into_float_value();
-
-                let result_value = self.builder.build_float_add(first_f32, second_f32, "add");
-                let result_i32 = self.builder.build_bitcast(result_value, self.context.i32_type(), "result_i32");
-
-                let out = self.builder.build_alloca(self.val_type, "out");
-                let mut out_val = self.builder.build_load(out, "load_out").into_struct_value();
-
-                out_val = self.builder.build_insert_value(out_val, self.context.i8_type().const_int(0x2a, false), 0, "store_number_tag").unwrap().into_struct_value();
-                out_val = self.builder.build_insert_value(out_val, result_i32, 1, "store_result").unwrap().into_struct_value();
-
-                self.builder.build_store(out, out_val);
-
-                // self.dbg("Add");
-                // self.dbg_val(out_val);
-
-
-                self.stack_loc.push(out);
+                    MetaValue::with_tag(ValueTag::Number, result_i32, code_gen)
+                })
             },
+            DMIR::FloatTg => {
+                self.emit_bin_op(|first, second, code_gen| {
+                    let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
+                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
+
+                    let result_value = code_gen.builder.build_float_compare(FloatPredicate::OGT,second_f32, first_f32, "test_greater");
+                    let result_f32 = code_gen.builder.build_unsigned_int_to_float(result_value, code_gen.context.f32_type(), "bool_to_f32");
+                    let result_i32 = code_gen.builder.build_bitcast(result_f32, code_gen.context.i32_type(), "f32_as_i32").into_int_value();
+
+                    MetaValue::with_tag(ValueTag::Number, result_i32, code_gen)
+                })
+            }
             DMIR::PushInt(val) => {
                 let out = self.builder.build_alloca(self.val_type, "push_int");
 
@@ -258,23 +307,14 @@ impl<'ctx> CodeGen<'ctx, '_> {
             },
             DMIR::PushVal(op) => {
                 let out = self.builder.build_alloca(self.val_type, "push_val");
-                let out_val = self.builder.build_load(out, "load_out").into_struct_value();
-                let out_val = self.builder.build_insert_value(
-                    out_val,
+
+                let result = MetaValue::new(
                     self.context.i8_type().const_int(op.tag as u64, false),
-                    0,
-                    "store_tag"
-                ).unwrap();
+                    self.context.i32_type().const_int(op.data as u64, false)
+                );
 
-
-                let out_val = self.builder.build_insert_value(
-                    out_val,
-                    self.context.i32_type().const_int(op.data as u64, false),
-                    1,
-                    "store_out"
-                ).unwrap();
-
-                self.builder.build_store(out, out_val);
+                let result_val = self.emit_store_meta_value(result);
+                self.builder.build_store(out, result_val);
                 self.stack_loc.push(out);
             }
             // Return stack top from proc
@@ -373,6 +413,7 @@ enum DMIR {
     SetCache,
     GetCacheField(u32),
     FloatAdd,
+    FloatTg,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
     Ret,
@@ -480,6 +521,9 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
                     },
                     Instruction::Add => {
                         irs.push(DMIR::FloatAdd)
+                    }
+                    Instruction::Tg => {
+                        irs.push(DMIR::FloatTg)
                     }
                     Instruction::Ret => {
                         irs.push(DMIR::Ret)

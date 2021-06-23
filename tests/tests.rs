@@ -25,3 +25,9 @@ fn test_push_val() {
     run_hook_test(vec!("push_val.dm"));
     assert_eq!(test_result().trim(), "Hello, world!")
 }
+
+#[test]
+fn test_tg_op() {
+    run_hook_test(vec!("test_tg_op.dm"));
+    assert_eq!(test_result().trim(), "b\na\neq")
+}
