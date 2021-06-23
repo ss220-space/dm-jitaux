@@ -9,14 +9,14 @@ use inkwell::types::StructType;
 use std::collections::HashMap;
 use dmasm::operands::Variable;
 use std::borrow::Borrow;
-use std::ffi::CString;
+use std::ffi::{CString, CStr};
 use inkwell::{OptimizationLevel, AddressSpace, IntPredicate, FloatPredicate};
 use crate::{DisassembleEnv, guard};
 use inkwell::basic_block::BasicBlock;
 use std::mem::transmute_copy;
 use std::collections::hash_map::Entry;
 use inkwell::passes::PassManager;
-use std::ptr::NonNull;
+use std::ptr::{NonNull, drop_in_place};
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 use inkwell::AddressSpace::Generic;
@@ -162,11 +162,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     fn dbg(&mut self, str: &str) {
-        let str = self.context.const_string(CString::new(str).unwrap().as_bytes(), true);
-        let ptr = self.builder.build_alloca(str.get_type(), "dbg_str");
-        self.builder.build_store(ptr, str);
-        let arg_ptr = self.builder.build_bitcast(ptr, self.context.i8_type().ptr_type(AddressSpace::Generic), "cast_ptr").into_pointer_value();
-        self.builder.build_call(self.module.get_function("<intrinsic>/debug").unwrap(), &[arg_ptr.into()], "call_dbg");
+        let ptr = self.builder.build_global_string_ptr(str, "dbg_str").as_pointer_value();
+        self.builder.build_call(self.module.get_function("<intrinsic>/debug").unwrap(), &[ptr.into()], "call_dbg");
     }
 
     fn dbg_val(&mut self, val: StructValue<'ctx>) {
@@ -412,7 +409,7 @@ fn decode_set_var(vr: &Variable, out: &mut Vec<DMIR>) {
 #[no_mangle]
 pub extern "C" fn debug(str: *mut i8) {
     log::debug!("dbg ptr: {:?}", str);
-    log::debug!("dbg: {}", unsafe { CString::from_raw(str) }.to_str().unwrap())
+    log::debug!("dbg: {}", unsafe { CStr::from_ptr(str) }.to_str().unwrap());
 }
 
 #[no_mangle]
@@ -524,7 +521,7 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
     // create start basic block for our function
     let block = context.append_basic_block(func, "base");
     code_gen.builder.position_at_end(block);
-    // code_gen.dbg(format!("llvm function call {}", proc.path).as_str());
+    code_gen.dbg(format!("llvm function call {}", proc.path).as_str());
 
     // Emit LLVM IR nodes from DMIR
     for ir in irs {
