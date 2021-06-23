@@ -2,7 +2,19 @@
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)
 # dm-jitaux
 
-dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
+dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools), [dmasm](https://github.com/ss220-space/dmasm) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
+
+## Implementation status
+|OpCode|Status| 
+|------|------|
+|GetVar||
+|SetVar||
+|Add||
+|Ret||
+|End||
+|Test ||
+|Jz||
+|PushInt||
 
 ## Dependencies
 *These instructions were taken directly from tgstation's [rust-g](https://github.com/tgstation/rust-g) documentation.*
@@ -25,7 +37,7 @@ The [Rust] compiler:
     ./rustup-init.sh
     ```
     Alternatively without saving
-    ```
+    ```sh
     # Nightly toolchain is required
     curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly
     ```
@@ -96,6 +108,8 @@ Full guide: [Building LLVM with CMake](https://llvm.org/docs/CMake.html)
 ```sh
 sudo apt install llvm-12-dev:i386
 ```
+#### Other
+[Checkout this](https://apt.llvm.org/) for more info.
 
 ### Compiling
 
