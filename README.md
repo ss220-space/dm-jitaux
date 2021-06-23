@@ -92,9 +92,9 @@ cmake --build . --target install
 
 Full guide: [Building LLVM with CMake](https://llvm.org/docs/CMake.html) 
 
-#### Ubuntu and Debian
+#### Debian
 ```sh
-sudo apt install llvm-12-dev
+sudo apt install llvm-12-dev:i386
 ```
 
 ### Compiling
@@ -103,13 +103,13 @@ sudo apt install llvm-12-dev
 ```sh
 # PowerShell
 $env:LLVM_SYS_120_PREFIX = "C:\LLVM" # LLVM prefix specified before
-cargo build --debug --target i686-pc-windows-msvc
-cargo test --debug --target i686-pc-windows-msvc -- --test-threads=1
+cargo build --target i686-pc-windows-msvc
+cargo test --target i686-pc-windows-msvc -- --test-threads=1
 ```
-#### Windows
+#### Linux
 ```sh
-cargo build --debug --target i686-unknown-linux-gnu
-cargo test --debug --target i686-unknown-linux-gnu -- --test-threads=1
+cargo build --target i686-unknown-linux-gnu
+BYOND_PATH="~/byond" cargo test --target i686-unknown-linux-gnu -- --test-threads=1
 ```
 
 ## See also
