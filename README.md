@@ -5,6 +5,21 @@
 dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools), [dmasm](https://github.com/ss220-space/dmasm) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
 
 ## Implementation status
+#### Roadmap
+- PoC ✔️
+- Deoptimization
+- Sleeping proc deoptimization
+- Calls
+- Virtual calls
+- Type probing deoptimization
+- Heterogenous instruction optimization
+- JITed-to-JITed direct calls
+- Tiering
+- Branch / Call counting
+- Sleeping proc support
+
+
+#### Opcodes
 |OpCode|Status| 
 |------|------|
 |GetVar|SetCache, Field, Src, Local|
