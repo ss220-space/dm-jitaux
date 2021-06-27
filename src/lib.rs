@@ -25,7 +25,6 @@ use std::borrow::BorrowMut;
 use std::panic::{UnwindSafe, catch_unwind};
 use dmasm::format_disassembly;
 use std::process::exit;
-use auxtools::sigscan;
 
 
 pub struct DisassembleEnv;
@@ -152,14 +151,9 @@ pub fn log_init() {
         log::info!("Hooked {}", hook.proc_path)
     }
 
-    unsafe { deopt::EXECUTE_INSTRUCTION =
-        auxtools::sigscan::Scanner::for_module(auxtools::BYONDCORE)
-            .unwrap()
-            .find(signature!("0F B7 48 ?? 8B 78 ?? 8B F1 8B 14 ?? 81 FA ?? ?? 00 00 0F 87 ?? ?? ?? ??"))
-            .unwrap() as *const std::ffi::c_void
-    };
+    deopt::initialize_deopt();
 
-    Value::from_string("Log init success")
+    Value::from_string("dm-jitaux init success")
 }
 
 #[hook("/proc/dump_opcodes")]

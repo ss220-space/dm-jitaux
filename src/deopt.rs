@@ -1,35 +1,29 @@
 extern crate libc;
 
 use auxtools::raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
-use auxtools::raw_types::values::{ValueData, ValueTag};
+use auxtools::raw_types::values::{ValueData, ValueTag, Value};
 use auxtools::raw_types::strings::StringId;
-use auxtools::raw_types::procs::{ExecutionContext, ProcInstance};
+use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId};
 use std::ffi::c_void;
+use auxtools::sigscan;
 
-pub(crate) static mut EXECUTE_INSTRUCTION: *const c_void = std::ptr::null();
+static mut DO_CALL: Option<extern "cdecl" fn(*mut ProcInstance) -> Value> = Option::None;
 
-unsafe fn call_execute_instruction(context: *mut ExecutionContext) {
-    asm!(
-        "mov eax, {0}",
-        "jmp ecx",
-        in(reg) context, in("ecx") EXECUTE_INSTRUCTION
-    );
-}
 
 #[no_mangle]
 pub extern "C" fn deopt(
-    out: *mut auxtools::raw_types::values::Value,
-    proc_id: auxtools::raw_types::procs::ProcId,
+    out: *mut Value,
+    proc_id: ProcId,
     proc_flags: u8,
     offset: u32,
     test_flag: bool,
-    stack: *const auxtools::raw_types::values::Value,
+    stack: *const Value,
     stack_size: u32,
-    cached_datum: auxtools::raw_types::values::Value,
-    src: auxtools::raw_types::values::Value,
-    args: *const auxtools::raw_types::values::Value,
+    cached_datum: Value,
+    src: Value,
+    args: *const Value,
     args_count: u32,
-    locals: *const auxtools::raw_types::values::Value,
+    locals: *const Value,
     locals_count: u32
 ) {
 
@@ -57,16 +51,18 @@ pub extern "C" fn deopt(
         (*proc).src = src;
         (*proc).context = context;
         (*proc).arglist_idx = ValueData { id: 0 }; // TODO?
-        (*proc).callback = None;
+        (*proc).callback = std::ptr::null();
         (*proc).callback_value = 0;
 
         (*proc).args_count = args_count;
         (*proc).args = put_to_data_store(&mut (*proc).data_store, args, args_count);
         (*proc).time_to_resume = 0.;
 
+        (*proc).data_store.internal_arg_count = 10; // hack to avoid complex logic with putting data into
 
         (*context).proc_instance = proc;
-        (*context).parent_context = (*CURRENT_EXECUTION_CONTEXT);
+        (*context).parent_context = std::ptr::null_mut();
+
         (*context).filename = StringId(0xffff);
         (*context).line = 0;
         let (bytecode_ptr, _) = auxtools::Proc::from_id(proc_id).unwrap().bytecode_mut_ptr();
@@ -75,18 +71,18 @@ pub extern "C" fn deopt(
 
         (*context).test_flag = test_flag;
         (*context).cached_datum = cached_datum;
-        (*context).dmvalue_0x20 = auxtools::raw_types::values::Value {
+        (*context).dmvalue_0x20 = Value {
             tag: ValueTag::Null,
             data: ValueData {
                 id: 0x0
             }
         };
-        let mut cached_values = [auxtools::raw_types::values::Value { tag: ValueTag::Null, data: ValueData { id: 0x0 } }; 64];
+        let mut cached_values = [Value { tag: ValueTag::Null, data: ValueData { id: 0x0 } }; 64];
 
-        let mut dmvalue_ptr_2c: auxtools::raw_types::values::Value = auxtools::raw_types::values::Value { tag: ValueTag::Null, data: ValueData { id: 0x0 } };
+        let mut dmvalue_ptr_2c: Value = Value { tag: ValueTag::Null, data: ValueData { id: 0x0 } };
 
-        (*context).cached_values = (&mut cached_values) as *mut auxtools::raw_types::values::Value;
-        (*context).dmvalue_ptr_2c = (&mut dmvalue_ptr_2c) as *mut auxtools::raw_types::values::Value;
+        (*context).cached_values = (&mut cached_values) as *mut Value;
+        (*context).dmvalue_ptr_2c = (&mut dmvalue_ptr_2c) as *mut Value;
 
         (*context).locals = put_to_data_store(&mut (*proc).data_store, locals, locals_count);
         (*context).stack = put_to_data_store(&mut (*proc).data_store, stack, stack_size);
@@ -132,29 +128,60 @@ pub extern "C" fn deopt(
 	    pub some_time4: Timeval,
          */
 
-        (*CURRENT_EXECUTION_CONTEXT) = context;
+        let prev_context = (*CURRENT_EXECUTION_CONTEXT);
 
-        // TODO EXEC INSN
+        (*CURRENT_EXECUTION_CONTEXT) = context; // swap context
 
         log::debug!("Deopt called: context {:?}, proc {:?}", *context, *proc);
 
-        call_execute_instruction(context);
+        *out = DO_CALL.unwrap()(proc);
 
-        *out = (*context).dot;
+        log::debug!("Deopt return: {:?}", *out);
+
+        (*CURRENT_EXECUTION_CONTEXT) = prev_context;
     };
 }
 
 unsafe fn put_to_data_store(
     data_store: *mut auxtools::raw_types::procs::ArgAndLocalStore,
-    data: *const auxtools::raw_types::values::Value,
+    data: *const Value,
     count: u32
-) -> *mut auxtools::raw_types::values::Value {
+) -> *mut Value {
 
-    let data_size = std::mem::size_of::<auxtools::raw_types::values::Value>() * (count as usize);
+    let data_size = std::mem::size_of::<Value>() * ((count + 1) as usize);
 
     (*data_store).external_arg_count += count;
-    let r = libc::malloc(data_size);
+    let r = libc::malloc(data_size); // TODO: ensure no leaks!
     libc::memcpy(r as *mut libc::c_void, data as *mut libc::c_void, data_size);
 
-    return r as *mut auxtools::raw_types::values::Value;
+    return r as *mut Value;
+}
+
+pub fn initialize_deopt() {
+    let scanner = auxtools::sigscan::Scanner::for_module(auxtools::BYONDCORE).unwrap();
+
+    let mut do_call_byond = std::ptr::null();
+    {
+        if cfg!(windows) {
+            let res = scanner.find(signature!("53 8B DC 83 EC 08 83 E4 F8 83 C4 04"));
+
+            if let Some(ptr) = res {
+                do_call_byond = ptr as *const std::ffi::c_void;
+            }
+        }
+
+        if cfg!(unix) {
+            panic!("TODO")
+        }
+
+        if do_call_byond.is_null() {
+            panic!("Failed to find do_call");
+        }
+    }
+
+    unsafe {
+        DO_CALL = Option::Some(
+            std::mem::transmute(do_call_byond)
+        );
+    };
 }
