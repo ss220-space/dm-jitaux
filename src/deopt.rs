@@ -128,17 +128,11 @@ pub extern "C" fn deopt(
 	    pub some_time4: Timeval,
          */
 
-        let prev_context = (*CURRENT_EXECUTION_CONTEXT);
-
-        (*CURRENT_EXECUTION_CONTEXT) = context; // swap context
-
         log::debug!("Deopt called: context {:?}, proc {:?}", *context, *proc);
 
         *out = DO_CALL.unwrap()(proc);
 
         log::debug!("Deopt return: {:?}", *out);
-
-        (*CURRENT_EXECUTION_CONTEXT) = prev_context;
     };
 }
 
