@@ -37,3 +37,8 @@ fn test_deopt() {
 fn test_mul() {
     run_hook_and_assert_result(vec!("test_mul.dm"));
 }
+
+#[test]
+fn test_add() {
+    run_hook_and_assert_result(vec!("test_add.dm"));
+}

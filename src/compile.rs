@@ -513,6 +513,28 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_return(None);
                 self.block_ended = true;
             }
+            DMIR::CheckTypeDeopt(stack_pos, tag, deopt) => {
+                let stack_size = self.stack_loc.len();
+                let stack_value_ptr = self.stack_loc[stack_size - 1 - (stack_pos.clone() as usize)];
+                let stack_value = self.builder.build_load(stack_value_ptr, "load_value_to_check").into_struct_value();
+                let actual_tag = self.emit_load_meta_value(stack_value).tag;
+
+                let next_block = self.context.append_basic_block(func, "next");
+                let deopt_block = self.context.append_basic_block(func, "deopt");
+
+
+                self.builder.build_conditional_branch(
+                    self.builder.build_int_compare(IntPredicate::EQ, actual_tag, self.const_tag(tag.clone()), "check_tag"),
+                    next_block,
+                    deopt_block
+                );
+
+                self.builder.position_at_end(deopt_block);
+                self.emit(deopt.borrow(), func);
+
+                self.builder.position_at_end(next_block);
+                self.block_ended = false;
+            }
             _ => {}
         }
     }
@@ -536,6 +558,7 @@ enum DMIR {
     JZ(String),
     EnterBlock(String),
     Deopt(u32, ProcId),
+    CheckTypeDeopt(u32, ValueTag, Box<DMIR>),
     End
 }
 
@@ -636,6 +659,8 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
                         decode_set_var(&vr, &mut irs)
                     },
                     Instruction::Add => {
+                        irs.push(DMIR::CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+                        irs.push(DMIR::CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
                         irs.push(DMIR::FloatAdd)
                     }
                     Instruction::Mul => {
