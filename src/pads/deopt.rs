@@ -4,14 +4,13 @@ use auxtools::raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
 use auxtools::raw_types::values::{ValueData, ValueTag, Value};
 use auxtools::raw_types::strings::StringId;
 use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId};
-use std::ffi::c_void;
 use auxtools::sigscan;
 
 static mut DO_CALL: Option<extern "cdecl" fn(*mut ProcInstance) -> Value> = Option::None;
 
 
 #[no_mangle]
-pub extern "C" fn deopt(
+pub extern "C" fn handle_deopt(
     out: *mut Value,
     proc_id: ProcId,
     proc_flags: u8,

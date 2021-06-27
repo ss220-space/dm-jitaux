@@ -3,7 +3,9 @@
 #![feature(asm)]
 
 mod compile;
-mod deopt;
+mod pads;
+mod dmir;
+mod codegen;
 
 
 #[macro_use]
@@ -19,7 +21,6 @@ use auxtools::hooks::call_counts;
 
 
 use log::LevelFilter;
-use auxtools::raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
 use std::collections::HashMap;
 use std::borrow::BorrowMut;
 use std::panic::{UnwindSafe, catch_unwind};
@@ -151,7 +152,7 @@ pub fn log_init() {
         log::info!("Hooked {}", hook.proc_path)
     }
 
-    deopt::initialize_deopt();
+    pads::deopt::initialize_deopt();
 
     Value::from_string("dm-jitaux init success")
 }
