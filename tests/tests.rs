@@ -31,3 +31,9 @@ fn test_tg_op() {
     run_hook_test(vec!("test_tg_op.dm"));
     assert_eq!(test_result().trim(), "b\na\neq")
 }
+
+#[test]
+fn test_deopt() {
+    run_hook_test(vec!("test_deopt.dm"));
+    assert_eq!(test_result().trim(), "2")
+}

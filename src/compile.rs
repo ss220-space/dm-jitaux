@@ -9,7 +9,7 @@ use inkwell::types::StructType;
 use std::collections::HashMap;
 use dmasm::operands::Variable;
 use std::borrow::Borrow;
-use std::ffi::{CString, CStr};
+use std::ffi::{CString, CStr, c_void};
 use inkwell::{OptimizationLevel, AddressSpace, IntPredicate, FloatPredicate};
 use crate::{DisassembleEnv, guard};
 use inkwell::basic_block::BasicBlock;
@@ -21,7 +21,11 @@ use std::marker::PhantomPinned;
 use std::pin::Pin;
 use inkwell::AddressSpace::Generic;
 use inkwell::debug_info::{DILocation, DebugInfoBuilder, DWARFSourceLanguage};
-use auxtools::raw_types::values::ValueTag;
+use auxtools::raw_types::values::{ValueTag, ValueData};
+use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId};
+use auxtools::raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+use auxtools::raw_types::strings::StringId;
+use crate::deopt::deopt;
 
 #[hook("/proc/compile_proc")]
 pub fn compile_and_call(proc_name: auxtools::Value) {
@@ -400,6 +404,65 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     self.builder.build_return(None);
                 }
             }
+            DMIR::Deopt(offset, proc_id) => {
+                let out_stack_type = self.val_type.array_type(self.stack_loc.len() as u32);
+                let stack_out_ptr = self.builder.build_alloca(out_stack_type,"out_stack");
+                let mut stack_out_array = out_stack_type.const_zero();
+                for (pos, loc) in self.stack_loc.iter().enumerate() {
+                    let load_stack = self.builder.build_load(loc.clone(), "load_value_stack_loc");
+                    stack_out_array = self.builder.build_insert_value(stack_out_array, load_stack, pos as u32, "store_value_from_stack").unwrap().into_array_value();
+                }
+                self.builder.build_store(stack_out_ptr, stack_out_array);
+
+
+                let local_names = Proc::from_id(proc_id).unwrap().local_names();
+
+                let out_locals_type = self.val_type.array_type(local_names.len() as u32);
+                let locals_out_ptr = self.builder.build_alloca(out_locals_type,"out_locals");
+                let mut locals_out_array = out_locals_type.const_zero();
+                for (pos, loc) in self.locals.iter() {
+                    let load_local = self.builder.build_load(loc.clone(), "load_value_local");
+                    locals_out_array = self.builder.build_insert_value(locals_out_array, load_local, pos.clone(), "store_value_from_local").unwrap().into_array_value();
+                }
+                self.builder.build_store(locals_out_ptr, locals_out_array);
+
+                let parameter_count = Proc::from_id(proc_id).unwrap().parameter_names();
+
+                /*
+                out: *mut auxtools::raw_types::values::Value,
+                proc_id: auxtools::raw_types::procs::ProcId,
+                proc_flags: u8,
+                offset: u32,
+                test_flag: bool,
+                stack: *const auxtools::raw_types::values::Value,
+                stack_size: u32,
+                cached_datum: auxtools::raw_types::values::Value,
+                src: auxtools::raw_types::values::Value,
+                args: *const auxtools::raw_types::values::Value,
+                args_count: u32,
+                locals: *const auxtools::raw_types::values::Value,
+                locals_count: u32
+                 */
+                self.builder.build_call(self.module.get_function("<intrinsic>/deopt").unwrap(), &[
+                    func.get_nth_param(0).unwrap().into(),
+                    self.context.i32_type().const_int(proc_id.0 as u64, false).into(),
+                    self.context.i8_type().const_int(2, false).into(),
+                    self.context.i32_type().const_int(offset as u64, false).into(),
+                    self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)).into(),
+                    self.builder.build_bitcast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(),
+                    self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(),
+                    self.cache.unwrap_or(self.val_type.const_zero()).into(),
+                    func.get_nth_param(1).unwrap().into(),
+                    func.get_nth_param(2).unwrap().into(),
+                    self.context.i32_type().const_int(parameter_count.len() as u64, false).into(),
+                    self.builder.build_bitcast(locals_out_ptr, self.val_type.ptr_type(Generic), "cast").into(),
+                    self.context.i32_type().const_int(local_names.len() as u64, false).into()
+                ], "call_deopt");
+
+
+                self.builder.build_return(None);
+                self.block_ended = true;
+            }
             _ => {}
         }
     }
@@ -420,6 +483,7 @@ enum DMIR {
     Test,
     JZ(String),
     EnterBlock(String),
+    Deopt(u32, ProcId),
     End
 }
 
@@ -508,7 +572,7 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
     for nd in nodes {
         match nd {
             // if node contains instruction
-            dmasm::Node::Instruction(insn, _data) => {
+            dmasm::Node::Instruction(insn, data) => {
                 match insn {
                     // skip debug info for now
                     Instruction::DbgFile(_f) => {}
@@ -524,6 +588,10 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
                     }
                     Instruction::Tg => {
                         irs.push(DMIR::FloatTg)
+                    }
+                    Instruction::Tl => {
+                        irs.push(DMIR::Deopt(data.offset, proc.id));
+                        irs.push(DMIR::EnterBlock(format!("post_deopt_{}", data.offset)));
                     }
                     Instruction::Ret => {
                         irs.push(DMIR::Ret)
@@ -577,6 +645,40 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
         let debug_val_func_sig = context.void_type().fn_type(&[code_gen.val_type.into()], false);
         let debug_val_func = code_gen.module.add_function("<intrinsic>/debug_val", debug_val_func_sig, Some(Linkage::External));
         code_gen.execution_engine.add_global_mapping(&debug_val_func,  debug_val as usize);
+
+
+        /*
+          out: *mut auxtools::raw_types::values::Value,
+          proc_id: auxtools::raw_types::procs::ProcId,
+          proc_flags: u8,
+          offset: u32,
+          test_flag: bool,
+          stack: *const auxtools::raw_types::values::Value,
+          stack_size: u32,
+          cached_datum: auxtools::raw_types::values::Value,
+          src: auxtools::raw_types::values::Value,
+          args: *const auxtools::raw_types::values::Value,
+          args_count: u32,
+          locals: *const auxtools::raw_types::values::Value,
+          locals_count: u32
+         */
+        let deopt_func_sig = context.void_type().fn_type(&[
+            code_gen.val_type.ptr_type(AddressSpace::Generic).into(),
+            context.i32_type().into(),
+            context.i8_type().into(),
+            context.i32_type().into(),
+            context.bool_type().into(),
+            code_gen.val_type.ptr_type(AddressSpace::Generic).into(),
+            context.i32_type().into(),
+            code_gen.val_type.into(),
+            code_gen.val_type.into(),
+            code_gen.val_type.ptr_type(AddressSpace::Generic).into(),
+            context.i32_type().into(),
+            code_gen.val_type.ptr_type(AddressSpace::Generic).into(),
+            context.i32_type().into()
+        ], false);
+        let deopt_func = code_gen.module.add_function("<intrinsic>/deopt", deopt_func_sig, Some(Linkage::External));
+        code_gen.execution_engine.add_global_mapping(&deopt_func,  deopt as usize);
     }
 
     // each function in our case should be void *(ret, src)
