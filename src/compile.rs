@@ -172,6 +172,11 @@ impl MetaValue<'_> {
 impl<'ctx> CodeGen<'ctx, '_> {
 
     fn create<'a>(context: &'ctx Context, module: &'a Module<'ctx>, builder: Builder<'ctx>, execution_engine: &'a ExecutionEngine<'ctx>) -> CodeGen<'ctx, 'a> {
+
+        // type of BYOND operands, actually a struct { type: u8, value: u32 }
+        let val_type = context.opaque_struct_type("DMValue");
+        val_type.set_body(&[context.i8_type().into(), context.i32_type().into()], false);
+
         CodeGen {
             context,
             module,
@@ -180,8 +185,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             stack_loc: vec![],
             locals: HashMap::new(),
             cache: None,
-            // type of BYOND operands, actually a struct { type: u8, value: u32 }
-            val_type: context.struct_type(&[context.i8_type().into(), context.i32_type().into()], false),
+            val_type,
             test_res: None,
             block_map: HashMap::new(),
             block_ended: false
