@@ -202,13 +202,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
 
-    fn emit_load_meta_value(&mut self, from: StructValue<'ctx>) -> MetaValue<'ctx> {
+    fn emit_load_meta_value(&self, from: StructValue<'ctx>) -> MetaValue<'ctx> {
         let tag = self.builder.build_extract_value(from, 0, "get_tag").unwrap().into_int_value();
         let data = self.builder.build_extract_value(from, 1, "get_data").unwrap().into_int_value();
         return MetaValue::new(tag, data.into());
     }
 
-    fn emit_store_meta_value(&mut self, from: MetaValue<'ctx>) -> StructValue<'ctx> {
+    fn emit_store_meta_value(&self, from: MetaValue<'ctx>) -> StructValue<'ctx> {
         let out_val = self.val_type.const_zero();
         let out_val = self.builder.build_insert_value(out_val, from.tag, 0, "set_tag").unwrap().into_struct_value();
         let out_val = self.builder.build_insert_value(out_val, from.data, 1, "set_data").unwrap().into_struct_value();
@@ -237,7 +237,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.stack_loc.push(out);
     }
 
-    fn const_tag(&mut self, value_tag: ValueTag) -> IntValue<'ctx> {
+    fn const_tag(&self, value_tag: ValueTag) -> IntValue<'ctx> {
         return self.context.i8_type().const_int(value_tag as u64, false).into()
     }
 
