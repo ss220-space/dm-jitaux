@@ -1,8 +1,8 @@
 /proc/do_test()
     compile_proc("/proc/do_deopt")
-    file("result.txt") << install_compiled()
+    CHECK_INSTALL_COMPILED // RES: /do_deopt
 
-    file("result.txt") << do_deopt(2, 0)
+    RES(do_deopt(2, 1)) // RES: 3
 
 /proc/do_deopt(n, d)
     var/q = n + d

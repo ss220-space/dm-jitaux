@@ -14,8 +14,39 @@ pub fn run_hook_test(files: Vec<&str>) {
     assert!(run_dm().unwrap().success());
 }
 
+pub fn run_hook_and_assert_result(files: Vec<&str>) {
+    run_hook_test(files.clone());
+
+    let mut expected_lines: Vec<String> = Vec::new();
+    for file in files.iter() {
+        let str = fs::read_to_string(Path::new(TEST_WORK_DIR).join(file)).unwrap();
+        let mut do_test_found = false;
+        for line in str.lines() {
+            if line.starts_with("/proc/do_test") {
+                do_test_found = true;
+            }
+
+            if do_test_found {
+                let pos = line.rfind(RES_PREFIX);
+                if let Some(pos) = pos {
+                    let text = &line[(pos + RES_PREFIX.len())..];
+                    expected_lines.push(text.trim().to_string());
+                }
+            }
+
+        }
+
+        if do_test_found {
+            break;
+        }
+    }
+    assert_eq!(test_result().trim(), expected_lines.join("\n"));
+}
+
 const TEST_WORK_DIR: &str = "tests/tmp/";
 const TEST_DATA_DIR: &str = "tests/testData/";
+
+const RES_PREFIX: &str = "// RES: ";
 
 pub fn test_result() -> String {
     let path = Path::new(TEST_WORK_DIR).join("result.txt");

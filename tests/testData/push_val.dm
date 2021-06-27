@@ -1,8 +1,8 @@
 /proc/do_test()
     compile_proc("/proc/get")
-    install_compiled()
+    CHECK_INSTALL_COMPILED // RES: /get
 
-    file("result.txt") << get()
+    RES(get()) // RES: Hello, world!
 
 /proc/get()
     return "Hello, world!"

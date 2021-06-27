@@ -1,10 +1,10 @@
 /proc/do_test()
     compile_proc("/proc/cond_false")
     compile_proc("/proc/cond_true")
-    install_compiled()
+    CHECK_INSTALL_COMPILED // RES: /cond_false, /cond_true
 
-    file("result.txt") << cond_true()
-    file("result.txt") << cond_false()
+    RES(cond_true()) // RES: 1
+    RES(cond_false()) // RES: 0
 
 /proc/cond_true()
     var/c = 1

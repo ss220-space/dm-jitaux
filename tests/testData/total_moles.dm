@@ -1,10 +1,10 @@
 /proc/do_test()
     compile_proc("/datum/gas_mixture/proc/total_moles")
-    install_compiled()
+    CHECK_INSTALL_COMPILED // RES: /datum/gas_mixture/total_moles
 
     var/datum/gas_mixture/mix = new
     var/moles = mix.total_moles() + mix.total_moles() + mix.total_moles()
-    file("result.txt") << moles
+    RES(moles) // RES: 63
 
 
 /datum/gas_mixture
