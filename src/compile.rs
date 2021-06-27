@@ -268,7 +268,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         return MetaValue::with_tag(ValueTag::Number, out_f32.into(), self);
     }
 
-    fn emit(&mut self, ir: DMIR, func: FunctionValue<'ctx>) {
+    fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
         match ir {
 
             // Load src onto stack
@@ -294,7 +294,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let receiver_value = self.cache.unwrap();
 
                 let out = self.builder.build_alloca(self.val_type, "get_cache_field_out");
-                self.builder.build_call(get_var_func, &[out.into(), receiver_value.into(), self.context.i32_type().const_int(name_id as u64, false).into()], "get_cache_field");
+                self.builder.build_call(get_var_func, &[out.into(), receiver_value.into(), self.context.i32_type().const_int(name_id.clone() as u64, false).into()], "get_cache_field");
 
                 // self.dbg("GetVar");
                 // self.dbg_val(self.builder.build_load(out, "load_dbg").into_struct_value());
@@ -342,7 +342,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 out_val = self.builder.build_insert_value(out_val, self.context.i8_type().const_int(0x2a, false), 0, "store_number_tag").unwrap().into_struct_value();
 
                 let result_i32 = self.builder.build_bitcast(
-                    self.context.f32_type().const_float(val as f64).const_cast(self.context.f32_type()),
+                    self.context.f32_type().const_float(val.clone() as f64).const_cast(self.context.f32_type()),
                     self.context.i32_type(),
                     "load_value"
                 ).into_int_value();
@@ -388,7 +388,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             // Set indexed local to stack top
             DMIR::SetLocal(idx) => {
                 let ptr = self.stack_loc.pop().unwrap();
-                self.locals.insert(idx, ptr);
+                self.locals.insert(idx.clone(), ptr);
             }
             // Push indexed local value to stack
             DMIR::GetLocal(idx) => {
@@ -400,7 +400,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let ptr_int = self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(Generic));
                 let args_pointer_int = self.builder.build_ptr_to_int(args_pointer, ptr_int, "args_ptr_to_int");
                 let size_of = self.val_type.size_of().unwrap();
-                let offset_int = size_of.const_mul(size_of.get_type().const_int(idx as u64, false));
+                let offset_int = size_of.const_mul(size_of.get_type().const_int(idx.clone() as u64, false));
                 let result_ptr_int = self.builder.build_int_add(args_pointer_int, self.builder.build_int_cast(offset_int, ptr_int, "conv"), "add_offset");
                 self.stack_loc.push(self.builder.build_int_to_ptr(result_ptr_int, self.val_type.ptr_type(Generic), "final_ptr"));
             }
@@ -465,7 +465,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_store(stack_out_ptr, stack_out_array);
 
 
-                let local_names = Proc::from_id(proc_id).unwrap().local_names();
+                let local_names = Proc::from_id(proc_id.clone()).unwrap().local_names();
 
                 let out_locals_type = self.val_type.array_type(local_names.len() as u32);
                 let locals_out_ptr = self.builder.build_alloca(out_locals_type,"out_locals");
@@ -476,7 +476,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 }
                 self.builder.build_store(locals_out_ptr, locals_out_array);
 
-                let parameter_count = Proc::from_id(proc_id).unwrap().parameter_names();
+                let parameter_count = Proc::from_id(proc_id.clone()).unwrap().parameter_names();
 
                 /*
                 out: *mut auxtools::raw_types::values::Value,
@@ -497,7 +497,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     func.get_nth_param(0).unwrap().into(),
                     self.context.i32_type().const_int(proc_id.0 as u64, false).into(),
                     self.context.i8_type().const_int(2, false).into(),
-                    self.context.i32_type().const_int(offset as u64, false).into(),
+                    self.context.i32_type().const_int(offset.clone() as u64, false).into(),
                     self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)).into(),
                     self.builder.build_bitcast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(),
                     self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(),
@@ -759,7 +759,7 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
 
     // Emit LLVM IR nodes from DMIR
     for ir in irs {
-        code_gen.emit(ir, func);
+        code_gen.emit(&ir, func);
     }
 
     log::info!("{}", func.print_to_string().to_string());
