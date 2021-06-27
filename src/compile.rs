@@ -1,5 +1,5 @@
 use auxtools::{Value, Proc};
-use dmasm::{Instruction, format_disassembly};
+use dmasm::{Instruction, format_disassembly, DebugData};
 use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine};
 use inkwell::builder::Builder;
@@ -595,9 +595,13 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
                     Instruction::Tg => {
                         irs.push(DMIR::FloatTg)
                     }
-                    Instruction::Tl => {
-                        irs.push(DMIR::Deopt(data.offset, proc.id));
-                        irs.push(DMIR::EnterBlock(format!("post_deopt_{}", data.offset)));
+                    Instruction::CallGlob(arg_count, callee) => {
+                        if callee.0 == "/dm_jitaux_deopt" {
+                            irs.push(DMIR::Deopt(data.offset, proc.id));
+                            irs.push(DMIR::EnterBlock(format!("post_deopt_{}", data.offset)));
+                        } else {
+                           supported = false
+                        }
                     }
                     Instruction::Ret => {
                         irs.push(DMIR::Ret)

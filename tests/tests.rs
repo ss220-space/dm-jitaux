@@ -35,5 +35,5 @@ fn test_tg_op() {
 #[test]
 fn test_deopt() {
     run_hook_test(vec!("test_deopt.dm"));
-    assert_eq!(test_result().trim(), "2")
+    assert_eq!(test_result().trim(), "/do_deopt\n2")
 }
