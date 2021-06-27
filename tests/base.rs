@@ -39,7 +39,7 @@ fn copy_hook_lib() -> io::Result<()> {
 
 fn cmd_dm() -> Command {
     if cfg!(target_os = "windows") {
-        Command::new(format!("{}\\bin\\dreamdaemon.exe", byond_path()))
+        Command::new(format!("{}\\bin\\dm.exe", byond_path()))
     } else {
         let mut cmd = Command::new(format!("{}/bin/byondexec", byond_path()));
         cmd.arg(format!("{}/bin/DreamMaker", byond_path()));
