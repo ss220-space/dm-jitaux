@@ -321,6 +321,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_store(out, result_val);
                 self.stack_loc.push(out);
             }
+            DMIR::Pop => {
+                self.stack_loc.pop();
+            }
             // Return stack top from proc
             DMIR::Ret => {
 
@@ -479,6 +482,7 @@ enum DMIR {
     FloatTg,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
+    Pop,
     Ret,
     Test,
     JZ(String),
@@ -610,6 +614,9 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
                     }
                     Instruction::PushVal(op) => {
                         irs.push(DMIR::PushVal(op.raw.unwrap()))
+                    }
+                    Instruction::Pop => {
+                        irs.push(DMIR::Pop)
                     }
                     _ => {
                         log::info!("Unsupported insn {}", insn);
