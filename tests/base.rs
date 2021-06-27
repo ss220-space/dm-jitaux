@@ -7,6 +7,7 @@ use std::path::Path;
 
 pub fn run_hook_test(files: Vec<&str>) {
     fs::remove_file(Path::new(TEST_WORK_DIR).join("result.txt")).ok();
+    fs::remove_file(Path::new(TEST_WORK_DIR).join("world.txt")).ok();
     let mut all_files = vec!("common.dm", "hook.dm");
     all_files.extend(files);
     assert!(compile_files(all_files).unwrap().success());
@@ -46,7 +47,7 @@ pub fn run_hook_and_assert_result(files: Vec<&str>) {
 const TEST_WORK_DIR: &str = "tests/tmp/";
 const TEST_DATA_DIR: &str = "tests/testData/";
 
-const RES_PREFIX: &str = "// RES: ";
+const RES_PREFIX: &str = "// RES:";
 
 pub fn test_result() -> String {
     let path = Path::new(TEST_WORK_DIR).join("result.txt");

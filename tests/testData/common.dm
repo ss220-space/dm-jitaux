@@ -3,6 +3,7 @@
 
 /world/New()
     hook_main_init()
+    world.log = file("world.txt")
     do_test()
     exit_test()
 
