@@ -32,3 +32,8 @@ fn test_tg_op() {
 fn test_deopt() {
     run_hook_and_assert_result(vec!("test_deopt.dm"));
 }
+
+#[test]
+fn test_mul() {
+    run_hook_and_assert_result(vec!("test_mul.dm"));
+}
