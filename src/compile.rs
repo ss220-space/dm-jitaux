@@ -47,6 +47,7 @@ pub fn compile_and_call(proc_name: auxtools::Value) {
 #[hook("/proc/install_compiled")]
 pub fn install_hooks() {
     guard(|| {
+        let mut installed: Vec<String> = vec!();
         LLVM_CONTEXT.with(|val| {
             let execution_engine = val.execution_engine.as_ref().unwrap();
             let module = val.module.as_ref().unwrap();
@@ -60,7 +61,7 @@ pub fn install_hooks() {
 
                     if !name.starts_with("<intrinsic>/") {
                         log::info!("installing {}", name);
-
+                        installed.push(name.to_string());
                         let func: auxtools::hooks::ByondProcFunc = unsafe {
                             transmute_copy(&execution_engine.get_function_address(name).unwrap())
                         };
@@ -75,7 +76,8 @@ pub fn install_hooks() {
             }
         });
 
-        Result::Ok(Value::null())
+
+        Value::from_string(installed.join(", "))
     })
 }
 
