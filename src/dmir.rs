@@ -6,6 +6,8 @@ use std::ffi::CString;
 use std::borrow::Borrow;
 use auxtools::Proc;
 use auxtools::raw_types::strings::StringId;
+use inkwell::FloatPredicate;
+use crate::dmir::DMIR::CheckTypeDeopt;
 
 #[derive(Debug)]
 pub enum DMIR {
@@ -18,7 +20,7 @@ pub enum DMIR {
     PushCache,
     FloatAdd,
     FloatMul,
-    FloatTg,
+    FloatCmp(inkwell::FloatPredicate),
     FloatAbs,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
@@ -110,6 +112,12 @@ fn decode_call(vr: &Variable, arg_count: u32, out: &mut Vec<DMIR>) {
     }
 }
 
+fn decode_cmp(op: FloatPredicate, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
+    out.push(CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+    out.push(CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+    out.push(DMIR::FloatCmp(op))
+}
+
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
 
     // output for intermediate operations sequence
@@ -142,7 +150,16 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::FloatMul)
                     }
                     Instruction::Tg => {
-                        irs.push(DMIR::FloatTg)
+                        decode_cmp(FloatPredicate::UGT, &data, &proc, &mut irs);
+                    }
+                    Instruction::Tl => {
+                        decode_cmp(FloatPredicate::ULT, &data, &proc, &mut irs);
+                    }
+                    Instruction::Tge => {
+                        decode_cmp(FloatPredicate::UGE, &data, &proc, &mut irs);
+                    }
+                    Instruction::Tle => {
+                        decode_cmp(FloatPredicate::ULE, &data, &proc, &mut irs);
                     }
                     Instruction::Abs => {
                         irs.push(DMIR::FloatAbs)

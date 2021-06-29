@@ -24,8 +24,8 @@ fn test_push_val() {
 }
 
 #[test]
-fn test_tg_op() {
-    run_hook_and_assert_result(vec!("test_tg_op.dm"));
+fn test_cmp() {
+    run_hook_and_assert_result(vec!("test_cmp.dm"));
 }
 
 #[test]
