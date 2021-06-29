@@ -1,11 +1,13 @@
 use auxtools::raw_types::procs::ProcId;
 use auxtools::raw_types::values::ValueTag;
 use dmasm::{Instruction, Node, DebugData};
-use dmasm::operands::Variable;
+use dmasm::operands::{Variable, ValueOpRaw};
 use std::ffi::CString;
 use std::borrow::Borrow;
 use auxtools::Proc;
+use auxtools::raw_types::strings::StringId;
 
+#[derive(Debug)]
 pub enum DMIR {
     GetLocal(u32),
     SetLocal(u32),
@@ -13,6 +15,7 @@ pub enum DMIR {
     GetArg(u32),
     SetCache,
     GetCacheField(u32),
+    PushCache,
     FloatAdd,
     FloatMul,
     FloatTg,
@@ -25,11 +28,22 @@ pub enum DMIR {
     EnterBlock(String),
     Deopt(u32, ProcId),
     CheckTypeDeopt(u32, ValueTag, Box<DMIR>),
+    CallProcById(ProcId, u8, u32),
+    CallProcByName(StringId, u8, u32),
     End
 }
 
 
 
+fn get_string_id(str: &Vec<u8>) -> StringId {
+    let mut id = auxtools::raw_types::strings::StringId(0);
+    unsafe {
+        // obtain id of string from BYOND
+        auxtools::raw_types::funcs::get_string_id(&mut id, CString::from_vec_unchecked(str.clone()).as_ptr());
+    }
+
+    return id;
+}
 
 // GetVar cache = src; cache["oxygen"]
 // ->
@@ -55,13 +69,8 @@ fn decode_get_var(vr: &Variable, out: &mut Vec<DMIR>) {
         }
         // Just cache["STR"]
         Variable::Field(str) => {
-            let mut id = auxtools::raw_types::strings::StringId(0);
-            unsafe {
-                // obtain id of string from BYOND
-                auxtools::raw_types::funcs::get_string_id(&mut id, CString::from_vec_unchecked(str.0.clone()).as_ptr());
-            }
             // gen DMIR
-            out.push(DMIR::GetCacheField(id.0));
+            out.push(DMIR::GetCacheField(get_string_id(&(str.0)).0));
         }
         Variable::Local(idx) => out.push(DMIR::GetLocal(idx.clone())),
         Variable::Arg(idx) => out.push(DMIR::GetArg(idx.clone())),
@@ -77,6 +86,28 @@ fn decode_set_var(vr: &Variable, out: &mut Vec<DMIR>) {
     }
 }
 
+
+fn decode_call(vr: &Variable, arg_count: u32, out: &mut Vec<DMIR>) {
+    match vr {
+        Variable::SetCache(a, b) => {
+            decode_call(a.borrow(), arg_count, out);
+            out.push(DMIR::SetCache);
+            decode_call(b.borrow(), arg_count, out);
+        }
+        Variable::StaticVerb(_) => panic!("Unsupported: {:?}", vr.clone()),
+        Variable::DynamicVerb(_) => panic!("Unsupported: {:?}", vr.clone()),
+        Variable::StaticProc(proc_id) => {
+            let name_id = unsafe { &*Proc::find(&proc_id.0).unwrap().entry }.name;
+            out.push(DMIR::PushCache);
+            out.push(DMIR::CallProcByName(name_id, 2, arg_count))
+        }
+        Variable::DynamicProc(name) => {
+            out.push(DMIR::PushCache);
+            out.push(DMIR::CallProcByName(get_string_id(&(name.0)), 2, arg_count))
+        }
+        _ => decode_get_var(vr, out)
+    }
+}
 
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
 
@@ -112,13 +143,22 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::Tg => {
                         irs.push(DMIR::FloatTg)
                     }
-                    Instruction::CallGlob(_arg_count, callee) => {
+                    Instruction::CallGlob(arg_count, callee) => {
                         if callee.0 == "/dm_jitaux_deopt" {
                             irs.push(DMIR::Deopt(data.offset, proc.id));
                             irs.push(DMIR::EnterBlock(format!("post_deopt_{}", data.offset)));
                         } else {
-                            supported = false
+                            irs.push(DMIR::PushVal(ValueOpRaw { tag: ValueTag::Null as u8, data: 0 }));
+                            let id = Proc::find(callee.0).unwrap().id;
+                            irs.push(DMIR::CallProcById(id, 2, arg_count))
                         }
+                    }
+                    Instruction::Call(var, arg_count) => {
+                        decode_call(&var, arg_count, &mut irs);
+                    }
+                    Instruction::CallStatement(var, arg_count) => {
+                        decode_call(&var, arg_count, &mut irs);
+                        irs.push(DMIR::Pop)
                     }
                     Instruction::Ret => {
                         irs.push(DMIR::Ret)

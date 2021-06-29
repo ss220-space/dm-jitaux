@@ -42,3 +42,18 @@ fn test_mul() {
 fn test_add() {
     run_hook_and_assert_result(vec!("test_add.dm"));
 }
+
+#[test]
+fn test_call_global() {
+    run_hook_and_assert_result(vec!("test_call_global.dm"));
+}
+
+#[test]
+fn test_call_static() {
+    run_hook_and_assert_result(vec!("test_call_static.dm"));
+}
+
+#[test]
+fn test_call_dynamic() {
+    run_hook_and_assert_result(vec!("test_call_dynamic.dm"));
+}

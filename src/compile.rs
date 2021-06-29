@@ -140,6 +140,7 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
 
     let irs = dmir::decode_byond_bytecode(nodes, proc.clone()).unwrap();
 
+    log::debug!("DMIR created");
     // Prepare LLVM internals for code-generation
     let mut code_gen = CodeGen::create(context, &module, context.create_builder(), execution_engine);
     code_gen.init_builtins();
@@ -148,6 +149,7 @@ fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, 
 
     // Emit LLVM IR nodes from DMIR
     for ir in irs {
+        log::debug!("emit: {:?}", &ir);
         code_gen.emit(&ir, func);
     }
 

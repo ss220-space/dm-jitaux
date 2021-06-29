@@ -26,33 +26,33 @@ pub struct CodeGen<'ctx, 'a> {
     val_type: StructType<'ctx>,
     test_res: Option<IntValue<'ctx>>,
     block_map: HashMap<String, BasicBlock<'ctx>>,
-    block_ended: bool
+    block_ended: bool,
 }
 
 
-
+const INTRINSIC_CALL_PROC_BY_ID: &str = "<intrinsic>/call_proc_by_id";
+const INTRINSIC_CALL_PROC_BY_NAME: &str = "<intrinsic>/call_proc_by_name";
 
 struct MetaValue<'ctx> {
     tag: IntValue<'ctx>,
-    data: BasicValueEnum<'ctx>
+    data: BasicValueEnum<'ctx>,
 }
 
 impl MetaValue<'_> {
     fn new<'a>(tag: IntValue<'a>, data: BasicValueEnum<'a>) -> MetaValue<'a> {
         return MetaValue {
             tag,
-            data
-        }
+            data,
+        };
     }
 
     fn with_tag<'a>(tag: auxtools::raw_types::values::ValueTag, data: BasicValueEnum<'a>, code_gen: &mut CodeGen<'a, '_>) -> MetaValue<'a> {
         let tag = code_gen.context.i8_type().const_int(tag as u64, false);
-        return Self::new(tag, data)
+        return Self::new(tag, data);
     }
 }
 
 impl<'ctx> CodeGen<'ctx, '_> {
-
     pub fn init_builtins(&self) {
         if self.module.get_function("<intrinsic>/get_variable").is_none() {
             let get_variable_signature = self.context.i8_type().fn_type(&[self.val_type.ptr_type(AddressSpace::Generic).into(), self.val_type.into(), self.context.i32_type().into()], false);
@@ -101,6 +101,44 @@ impl<'ctx> CodeGen<'ctx, '_> {
             ], false);
             let deopt_func = self.module.add_function("<intrinsic>/deopt", deopt_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&deopt_func, pads::deopt::handle_deopt as usize);
+
+
+            {
+
+                let call_proc_by_id_sig = self.context.i8_type().fn_type(
+                    &[
+                        self.val_type.ptr_type(AddressSpace::Generic).into(), //out: *mut values::Value,
+                        self.val_type.into(), //usr: values::Value,
+                        self.context.i32_type().into(), //proc_type: u32,
+                        self.context.i32_type().into(), //proc_id: procs::ProcId,
+                        self.context.i32_type().into(), //unk_0: u32,
+                        self.val_type.into(), //src: values::Value,
+                        self.val_type.ptr_type(AddressSpace::Generic).into(), //args: *const values::Value,
+                        self.context.i32_type().into(), //args_count_l: usize,
+                        self.context.i32_type().into(), //unk_1: u32,
+                        self.context.i32_type().into(), //unk_2: u32,
+                    ],
+                    false
+                );
+                let call_proc_by_id_func = self.module.add_function(INTRINSIC_CALL_PROC_BY_ID, call_proc_by_id_sig, None);
+                self.execution_engine.add_global_mapping(&call_proc_by_id_func, auxtools::raw_types::funcs::call_proc_by_id as usize)
+            }
+
+            {
+                let call_proc_by_name_sig = self.context.i8_type().fn_type(&[
+                    self.val_type.ptr_type(AddressSpace::Generic).into(), //out: *mut values::Value,
+                    self.val_type.into(), //usr: values::Value,
+                    self.context.i32_type().into(), //proc_type: u32,
+                    self.context.i32_type().into(), //proc_name: strings::StringId,
+                    self.val_type.into(), //src: values::Value,
+                    self.val_type.ptr_type(AddressSpace::Generic).into(), //args: *mut values::Value,
+                    self.context.i32_type().into(), //args_count_l: usize,
+                    self.context.i32_type().into(), //unk_0: u32,
+                    self.context.i32_type().into(), //unk_1: u32,
+                ], false);
+                let call_proc_by_name_func = self.module.add_function(INTRINSIC_CALL_PROC_BY_NAME, call_proc_by_name_sig, None);
+                self.execution_engine.add_global_mapping(&call_proc_by_name_func, auxtools::raw_types::funcs::call_datum_proc_by_name as usize)
+            }
         }
     }
 
@@ -121,14 +159,22 @@ impl<'ctx> CodeGen<'ctx, '_> {
             val_type,
             test_res: None,
             block_map: HashMap::new(),
-            block_ended: false
+            block_ended: false,
         }
     }
 
     pub fn create_jit_func(&self, name: &str) -> FunctionValue<'ctx> {
         // each function in our case should be void *(ret, src)
         let ptr = self.val_type.ptr_type(AddressSpace::Generic);
-        let ft = self.context.void_type().fn_type(&[ptr.into(), self.val_type.into(), ptr.into()], false);
+        let ft = self.context.void_type().fn_type(
+            &[
+                ptr.into(),
+                self.val_type.into(),
+                self.val_type.into(),
+                ptr.into()
+            ],
+            false,
+        );
 
         // register function in LLVM
         let func = self.module.add_function(name, ft, None);
@@ -166,7 +212,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     fn emit_bin_op<F>(&mut self, op: F)
-        where F : FnOnce(MetaValue<'ctx>, MetaValue<'ctx>, &mut Self) -> MetaValue<'ctx>
+        where F: FnOnce(MetaValue<'ctx>, MetaValue<'ctx>, &mut Self) -> MetaValue<'ctx>
     {
         let first = self.stack_loc.pop().unwrap();
         let second = self.stack_loc.pop().unwrap();
@@ -187,11 +233,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     fn const_tag(&self, value_tag: ValueTag) -> IntValue<'ctx> {
-        return self.context.i8_type().const_int(value_tag as u64, false).into()
+        return self.context.i8_type().const_int(value_tag as u64, false).into();
     }
 
     fn emit_to_number_or_zero(&mut self, func: FunctionValue<'ctx>, value: MetaValue<'ctx>) -> MetaValue<'ctx> {
-        let iff_number = self.context.append_basic_block(func,"iff_number");
+        let iff_number = self.context.append_basic_block(func, "iff_number");
         let next = self.context.append_basic_block(func, "next");
 
         let out_f32_ptr = self.builder.build_alloca(self.context.f32_type(), "second_f32_store");
@@ -202,7 +248,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.build_conditional_branch(
             self.builder.build_int_compare(IntPredicate::EQ, value.tag, number_tag, "check_number"),
             iff_number,
-            next
+            next,
         );
         {
             self.builder.position_at_end(iff_number);
@@ -217,6 +263,19 @@ impl<'ctx> CodeGen<'ctx, '_> {
         return MetaValue::with_tag(ValueTag::Number, out_f32.into(), self);
     }
 
+    fn emit_store_args_from_stack(&mut self, arg_count: u32) -> PointerValue<'ctx> {
+        let out_stack_type = self.val_type.array_type(arg_count as u32);
+        let args = self.builder.build_alloca(out_stack_type, "out_stack");
+        let mut stack_out_array = out_stack_type.const_zero();
+        for idx in 0..arg_count {
+            let arg = self.stack_loc.pop().unwrap();
+            let load_stack = self.builder.build_load(arg, "load_arg_loc");
+            stack_out_array = self.builder.build_insert_value(stack_out_array, load_stack, idx as u32, "store_value_from_stack").unwrap().into_array_value();
+        }
+        self.builder.build_store(args, stack_out_array);
+        return self.builder.build_bitcast(args, self.val_type.ptr_type(Generic), "cast_to_ptr").into_pointer_value();
+    }
+
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
         match ir {
 
@@ -227,12 +286,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let p = self.builder.build_alloca(self.val_type, "Src");
                 self.builder.build_store(p, func.get_nth_param(1).unwrap());
                 self.stack_loc.push(p)
-            },
+            }
             // Set cache to stack top
             DMIR::SetCache => {
                 let arg = self.stack_loc.pop().unwrap();
                 self.cache = Some(self.builder.build_load(arg, "load_cache").into_struct_value());
-            },
+            }
+            DMIR::PushCache => {
+                let cache = self.cache.unwrap();
+                let out_ptr = self.builder.build_alloca(self.val_type, "push_cache");
+                self.builder.build_store(out_ptr, cache);
+                self.stack_loc.push(out_ptr);
+            }
             // Read field from cache e.g cache["oxygen"] where "oxygen" is interned string at name_id
             DMIR::GetCacheField(name_id) => {
                 log::debug!("gen get_variable {}", name_id);
@@ -249,7 +314,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 // self.dbg_val(self.builder.build_load(out, "load_dbg").into_struct_value());
 
                 self.stack_loc.push(out);
-            },
+            }
             // Read two values from stack, add them together, put result to stack
             DMIR::FloatAdd => {
                 self.emit_bin_op(|first, second, code_gen| {
@@ -261,7 +326,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                     MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
                 })
-            },
+            }
             DMIR::FloatMul => {
                 self.emit_bin_op(|first, second, code_gen| {
                     let first_f32 = code_gen.emit_to_number_or_zero(func, first).data.into_float_value();
@@ -277,12 +342,73 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
                     let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
 
-                    let result_value = code_gen.builder.build_float_compare(FloatPredicate::OGT,second_f32, first_f32, "test_greater");
+                    let result_value = code_gen.builder.build_float_compare(FloatPredicate::OGT, second_f32, first_f32, "test_greater");
                     let result_f32 = code_gen.builder.build_unsigned_int_to_float(result_value, code_gen.context.f32_type(), "bool_to_f32");
                     let result_i32 = code_gen.builder.build_bitcast(result_f32, code_gen.context.i32_type(), "f32_as_i32").into_int_value();
 
                     MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
                 })
+            }
+            DMIR::CallProcById(proc_id, proc_call_type, arg_count) => {
+                let src_ptr = self.stack_loc.pop().unwrap();
+                let src = self.builder.build_load(src_ptr, "load_src").into_struct_value();
+
+                let args = self.emit_store_args_from_stack(arg_count.clone());
+
+                let call_proc_by_id = self.module.get_function(INTRINSIC_CALL_PROC_BY_ID).unwrap();
+
+                let usr = func.get_nth_param(2).unwrap().into_struct_value(); // TODO: Proc can change self usr
+
+                let out = self.builder.build_alloca(self.val_type, "out");
+
+                self.builder.build_call(
+                    call_proc_by_id,
+                    &[
+                        out.into(), // out: *mut values::Value,
+                        usr.into(), // usr: values::Value,
+                        self.context.i32_type().const_int(proc_call_type.clone() as u64, false).into(), // proc_type: u32,
+                        self.context.i32_type().const_int(proc_id.0 as u64, false).into(), // proc_id: procs::ProcId,
+                        self.context.i32_type().const_int(0, false).into(),  // unk_0: u32,
+                        src.into(), // src: values::Value,
+                        args.into(), // args: *const values::Value,
+                        self.context.i32_type().const_int(arg_count.clone() as u64, false).into(), // args_count_l: usize,
+                        self.context.i32_type().const_int(0, false).into(), // unk_1: u32,
+                        self.context.i32_type().const_int(0, false).into(), // unk_2: u32,
+                    ],
+                    "call_proc_by_id",
+                );
+
+                self.stack_loc.push(out);
+            }
+            DMIR::CallProcByName(string_id, proc_call_type, arg_count) => {
+                let src_ptr = self.stack_loc.pop().unwrap();
+                let src = self.builder.build_load(src_ptr, "load_src").into_struct_value();
+
+                let args = self.emit_store_args_from_stack(arg_count.clone());
+
+                let call_proc_by_name = self.module.get_function(INTRINSIC_CALL_PROC_BY_NAME).unwrap();
+
+                let usr = func.get_nth_param(2).unwrap().into_struct_value(); // TODO: Proc can change self usr
+
+                let out = self.builder.build_alloca(self.val_type, "out");
+
+                self.builder.build_call(
+                    call_proc_by_name,
+                    &[
+                        out.into(), //out: *mut values::Value,
+                        usr.into(), //usr: values::Value,
+                        self.context.i32_type().const_int(proc_call_type.clone() as u64, false).into(), //proc_type: u32,
+                        self.context.i32_type().const_int(string_id.0 as u64, false).into(), //proc_name: strings::StringId,
+                        src.into(), //src: values::Value,
+                        args.into(), //args: *mut values::Value,
+                        self.context.i32_type().const_int(arg_count.clone() as u64, false).into(), //args_count_l: usize,
+                        self.context.i32_type().const_int(0, false).into(), //unk_0: u32,
+                        self.context.i32_type().const_int(0, false).into(), //unk_1: u32,
+                    ],
+                    "call_proc_by_name",
+                );
+
+                self.stack_loc.push(out);
             }
             DMIR::PushInt(val) => {
                 let out = self.builder.build_alloca(self.val_type, "push_int");
@@ -293,7 +419,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let result_i32 = self.builder.build_bitcast(
                     self.context.f32_type().const_float(val.clone() as f64).const_cast(self.context.f32_type()),
                     self.context.i32_type(),
-                    "load_value"
+                    "load_value",
                 ).into_int_value();
 
                 out_val = self.builder.build_insert_value(out_val, result_i32, 1, "store_value").unwrap().into_struct_value();
@@ -304,13 +430,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 // self.dbg("PushInt");
                 // self.dbg_val(out_val);
-            },
+            }
             DMIR::PushVal(op) => {
                 let out = self.builder.build_alloca(self.val_type, "push_val");
 
                 let result = MetaValue::new(
                     self.context.i8_type().const_int(op.tag as u64, false),
-                    self.context.i32_type().const_int(op.data as u64, false).into()
+                    self.context.i32_type().const_int(op.data as u64, false).into(),
                 );
 
                 let result_val = self.emit_store_meta_value(result);
@@ -332,8 +458,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_store(out, value);
                 self.block_ended = true;
                 self.builder.build_return(None);
-
-            },
+            }
             // Set indexed local to stack top
             DMIR::SetLocal(idx) => {
                 let ptr = self.stack_loc.pop().unwrap();
@@ -345,7 +470,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack_loc.push(ptr);
             }
             DMIR::GetArg(idx) => {
-                let args_pointer = func.get_nth_param(2).unwrap().into_pointer_value();
+                let args_pointer = func.get_nth_param(3).unwrap().into_pointer_value();
                 let ptr_int = self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(Generic));
                 let args_pointer_int = self.builder.build_ptr_to_int(args_pointer, ptr_int, "args_ptr_to_int");
                 let size_of = self.val_type.size_of().unwrap();
@@ -382,7 +507,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_conditional_branch(
                     self.builder.build_not(self.test_res.unwrap(), "jz"), // if test_res == false
                     block.clone(),
-                    next
+                    next,
                 );
 
                 self.builder.position_at_end(next);
@@ -405,7 +530,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::Deopt(offset, proc_id) => {
                 let out_stack_type = self.val_type.array_type(self.stack_loc.len() as u32);
-                let stack_out_ptr = self.builder.build_alloca(out_stack_type,"out_stack");
+                let stack_out_ptr = self.builder.build_alloca(out_stack_type, "out_stack");
                 let mut stack_out_array = out_stack_type.const_zero();
                 for (pos, loc) in self.stack_loc.iter().enumerate() {
                     let load_stack = self.builder.build_load(loc.clone(), "load_value_stack_loc");
@@ -417,7 +542,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let local_names = Proc::from_id(proc_id.clone()).unwrap().local_names();
 
                 let out_locals_type = self.val_type.array_type(local_names.len() as u32);
-                let locals_out_ptr = self.builder.build_alloca(out_locals_type,"out_locals");
+                let locals_out_ptr = self.builder.build_alloca(out_locals_type, "out_locals");
                 let mut locals_out_array = out_locals_type.const_zero();
                 for (pos, loc) in self.locals.iter() {
                     let load_local = self.builder.build_load(loc.clone(), "load_value_local");
@@ -427,36 +552,25 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let parameter_count = Proc::from_id(proc_id.clone()).unwrap().parameter_names();
 
-                /*
-                out: *mut auxtools::raw_types::values::Value,
-                proc_id: auxtools::raw_types::procs::ProcId,
-                proc_flags: u8,
-                offset: u32,
-                test_flag: bool,
-                stack: *const auxtools::raw_types::values::Value,
-                stack_size: u32,
-                cached_datum: auxtools::raw_types::values::Value,
-                src: auxtools::raw_types::values::Value,
-                args: *const auxtools::raw_types::values::Value,
-                args_count: u32,
-                locals: *const auxtools::raw_types::values::Value,
-                locals_count: u32
-                 */
-                self.builder.build_call(self.module.get_function("<intrinsic>/deopt").unwrap(), &[
-                    func.get_nth_param(0).unwrap().into(),
-                    self.context.i32_type().const_int(proc_id.0 as u64, false).into(),
-                    self.context.i8_type().const_int(2, false).into(),
-                    self.context.i32_type().const_int(offset.clone() as u64, false).into(),
-                    self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)).into(),
-                    self.builder.build_bitcast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(),
-                    self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(),
-                    self.cache.unwrap_or(self.val_type.const_zero()).into(),
-                    func.get_nth_param(1).unwrap().into(),
-                    func.get_nth_param(2).unwrap().into(),
-                    self.context.i32_type().const_int(parameter_count.len() as u64, false).into(),
-                    self.builder.build_bitcast(locals_out_ptr, self.val_type.ptr_type(Generic), "cast").into(),
-                    self.context.i32_type().const_int(local_names.len() as u64, false).into()
-                ], "call_deopt");
+                self.builder.build_call(
+                    self.module.get_function("<intrinsic>/deopt").unwrap(),
+                    &[
+                        func.get_nth_param(0).unwrap().into(), //out: *mut auxtools::raw_types::values::Value,
+                        self.context.i32_type().const_int(proc_id.0 as u64, false).into(), //proc_id: auxtools::raw_types::procs::ProcId,
+                        self.context.i8_type().const_int(2, false).into(), //proc_flags: u8,
+                        self.context.i32_type().const_int(offset.clone() as u64, false).into(), //offset: u32,
+                        self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)).into(), //test_flag: bool,
+                        self.builder.build_bitcast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //stack: *const auxtools::raw_types::values::Value,
+                        self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(), //stack_size: u32,
+                        self.cache.unwrap_or(self.val_type.const_zero()).into(), //cached_datum: auxtools::raw_types::values::Value,
+                        func.get_nth_param(1).unwrap().into(), //src: auxtools::raw_types::values::Value,
+                        func.get_nth_param(3).unwrap().into(), //args: *const auxtools::raw_types::values::Value,
+                        self.context.i32_type().const_int(parameter_count.len() as u64, false).into(), //args_count: u32,
+                        self.builder.build_bitcast(locals_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //locals: *const auxtools::raw_types::values::Value,
+                        self.context.i32_type().const_int(local_names.len() as u64, false).into(), //locals_count: u32
+                    ],
+                    "call_deopt",
+                );
 
 
                 self.builder.build_return(None);
@@ -475,7 +589,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_conditional_branch(
                     self.builder.build_int_compare(IntPredicate::EQ, actual_tag, self.const_tag(tag.clone()), "check_tag"),
                     next_block,
-                    deopt_block
+                    deopt_block,
                 );
 
                 self.builder.position_at_end(deopt_block);
