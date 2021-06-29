@@ -205,17 +205,26 @@ pub fn log_init() {
 #[hook("/proc/dump_opcodes")]
 pub fn dump_opcodes(list: Value) {
     if let Ok(name) = list.as_list()?.get(Value::from(1))?.as_string() {
-        if let Some(proc) = Proc::find(name.clone()) {
-            let mut env = DisassembleEnv {};
 
-            let bytecode = unsafe { proc.bytecode() };
+        let mut override_id = 0;
+        loop {
+            if let Some(proc) = Proc::find_override(name.clone(), override_id) {
+                let mut env = DisassembleEnv {};
 
-            let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+                let bytecode = unsafe { proc.bytecode() };
 
-            log::info!("{:?}", unsafe { &*proc.entry });
-            log::info!("{}", format_disassembly(&nodes, None));
-        } else {
-            log::error!("Function not found {}", name)
+                let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+
+                log::info!("override_id: {}, proc.path: {}", override_id, proc.path);
+                log::info!("{:?}", unsafe { &*proc.entry });
+                log::info!("{}", format_disassembly(&nodes, None));
+                override_id += 1;
+            } else {
+                if override_id == 0 {
+                    log::error!("Function not found {}", name);
+                }
+                break
+            }
         }
     } else {
         log::error!("Not a str {}, {}", list, list.to_string()?)
