@@ -46,7 +46,16 @@ pub extern "C" fn handle_deopt(
         (*proc).proc = proc_id;
         (*proc).flags = proc_flags;
         (*proc).mega_hack = 0;
-        (*proc).usr = (*(**CURRENT_EXECUTION_CONTEXT).proc_instance).usr; // TODO?
+
+        let usr_value = (*(**CURRENT_EXECUTION_CONTEXT).proc_instance).usr; // TODO?
+
+        // usr will be dec on DoCall exit, make sure not to lost it
+        auxtools::raw_types::funcs::inc_ref_count(usr_value.clone());
+
+        (*proc).usr = usr_value;
+        // src will be dec on DoCall exit, make sure not to lost it
+        auxtools::raw_types::funcs::inc_ref_count(src.clone());
+
         (*proc).src = src;
         (*proc).context = context;
         (*proc).arglist_idx = ValueData { id: 0 }; // TODO?
@@ -69,6 +78,10 @@ pub extern "C" fn handle_deopt(
         (*context).bytecode_offset = offset as u16;
 
         (*context).test_flag = test_flag;
+
+        // cached datum will be dec on DoCall exit, make sure not to lost it
+        auxtools::raw_types::funcs::inc_ref_count(cached_datum.clone());
+
         (*context).cached_datum = cached_datum;
         (*context).dmvalue_0x20 = Value {
             tag: ValueTag::Null,
