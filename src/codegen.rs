@@ -145,9 +145,16 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
     pub fn create<'a>(context: &'ctx Context, module: &'a Module<'ctx>, builder: Builder<'ctx>, execution_engine: &'a ExecutionEngine<'ctx>) -> CodeGen<'ctx, 'a> {
 
-        // type of BYOND operands, actually a struct { type: u8, value: u32 }
-        let val_type = context.opaque_struct_type("DMValue");
-        val_type.set_body(&[context.i8_type().into(), context.i32_type().into()], false);
+        // TODO: Cleanup
+        let val_type =
+            if let Some(val_type) = module.get_struct_type("DMValue") {
+                val_type
+            } else {
+                // type of BYOND operands, actually a struct { type: u8, value: u32 }
+                let val_type = context.opaque_struct_type("DMValue");
+                val_type.set_body(&[context.i8_type().into(), context.i32_type().into()], false);
+                val_type
+            };
 
         CodeGen {
             context,
