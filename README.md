@@ -7,10 +7,10 @@ dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.
 ## Implementation status
 #### Roadmap
 - PoC ✔️
-- Deoptimization
+- Deoptimization ✔️
 - Sleeping proc deoptimization
-- Calls
-- Virtual calls
+- Calls ✔️
+- Virtual calls ✔️
 - Type probing deoptimization
 - Heterogenous instruction optimization
 - JITed-to-JITed direct calls
@@ -34,6 +34,9 @@ dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.
 |PushVal|✔️|
 |Pop|✔️|
 |Mul|Float|
+|CallGlobal|No sleep deopt|
+|Call|StaticProc, DynamicProc, No sleep deopt|
+|CallStatement|StaticProc, DynamicProc, No sleep deopt|
 |Abs|✔️|
 
 ## Dependencies
