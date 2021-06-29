@@ -46,7 +46,7 @@ pub fn install_hooks() {
                 if let Some(func) = curr_function {
                     let name = func.get_name().to_str().unwrap();
 
-                    if !name.starts_with("<intrinsic>/") {
+                    if !name.starts_with("<intrinsic>/") && func.get_intrinsic_id() == 0 {
                         log::info!("installing {}", name);
                         installed.push(name.to_string());
                         let func: auxtools::hooks::ByondProcFunc = unsafe {

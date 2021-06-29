@@ -46,7 +46,7 @@ impl MetaValue<'_> {
         };
     }
 
-    fn with_tag<'a>(tag: auxtools::raw_types::values::ValueTag, data: BasicValueEnum<'a>, code_gen: &mut CodeGen<'a, '_>) -> MetaValue<'a> {
+    fn with_tag<'a>(tag: auxtools::raw_types::values::ValueTag, data: BasicValueEnum<'a>, code_gen: &CodeGen<'a, '_>) -> MetaValue<'a> {
         let tag = code_gen.context.i8_type().const_int(tag as u64, false);
         return Self::new(tag, data);
     }
@@ -236,7 +236,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         return self.context.i8_type().const_int(value_tag as u64, false).into();
     }
 
-    fn emit_to_number_or_zero(&mut self, func: FunctionValue<'ctx>, value: MetaValue<'ctx>) -> MetaValue<'ctx> {
+    fn emit_to_number_or_zero(&self, func: FunctionValue<'ctx>, value: MetaValue<'ctx>) -> MetaValue<'ctx> {
         let iff_number = self.context.append_basic_block(func, "iff_number");
         let next = self.context.append_basic_block(func, "next");
 
@@ -348,6 +348,22 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                     MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
                 })
+            }
+            DMIR::FloatAbs => {
+                let arg_ptr = self.stack_loc.pop().unwrap();
+                let arg = self.emit_load_meta_value(self.builder.build_load(arg_ptr, "load_arg").into_struct_value());
+                let arg_num = self.emit_to_number_or_zero(func, arg);
+                let fabs_type = self.context.f32_type().fn_type(&[self.context.f32_type().into()], false);
+                let fabs = self.module.add_function("llvm.fabs.f32", fabs_type, None);
+                let result = self.builder.build_call(fabs, &[arg_num.data.into_float_value().into()], "abs").try_as_basic_value().left().unwrap().into_float_value();
+
+                let out_ptr = self.builder.build_alloca(self.val_type, "abs_out");
+                let result_i32 = self.builder.build_bitcast(result, self.context.i32_type(), "cast_result").into_int_value();
+                let meta_result = MetaValue::with_tag(ValueTag::Number, result_i32.into(), self);
+                self.builder.build_store(out_ptr, self.emit_store_meta_value(meta_result));
+
+
+                self.stack_loc.push(out_ptr);
             }
             DMIR::CallProcById(proc_id, proc_call_type, arg_count) => {
                 let src_ptr = self.stack_loc.pop().unwrap();

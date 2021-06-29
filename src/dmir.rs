@@ -19,6 +19,7 @@ pub enum DMIR {
     FloatAdd,
     FloatMul,
     FloatTg,
+    FloatAbs,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
     Pop,
@@ -142,6 +143,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Tg => {
                         irs.push(DMIR::FloatTg)
+                    }
+                    Instruction::Abs => {
+                        irs.push(DMIR::FloatAbs)
                     }
                     Instruction::CallGlob(arg_count, callee) => {
                         if callee.0 == "/dm_jitaux_deopt" {

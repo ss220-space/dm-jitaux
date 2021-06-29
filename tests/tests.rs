@@ -57,3 +57,8 @@ fn test_call_static() {
 fn test_call_dynamic() {
     run_hook_and_assert_result(vec!("test_call_dynamic.dm"));
 }
+
+#[test]
+fn test_abs() {
+    run_hook_and_assert_result(vec!("test_abs.dm"));
+}

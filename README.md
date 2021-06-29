@@ -34,6 +34,7 @@ dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.
 |PushVal|✔️|
 |Pop|✔️|
 |Mul|Float|
+|Abs|✔️|
 
 ## Dependencies
 *These instructions were taken directly from tgstation's [rust-g](https://github.com/tgstation/rust-g) documentation.*
