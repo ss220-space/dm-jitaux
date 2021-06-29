@@ -7,5 +7,5 @@ pub extern "C" fn handle_debug(str: *mut i8) {
 
 #[no_mangle]
 pub extern "C" fn handle_debug_val(val: auxtools::raw_types::values::Value) {
-    log::debug!("dbg: {:?}", val)
+    log::debug!("dbg: {:?}, {} -- {:?}", val.tag, unsafe { val.data.id }, val)
 }
