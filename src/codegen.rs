@@ -32,6 +32,7 @@ pub struct CodeGen<'ctx, 'a> {
 
 const INTRINSIC_CALL_PROC_BY_ID: &str = "<intrinsic>/call_proc_by_id";
 const INTRINSIC_CALL_PROC_BY_NAME: &str = "<intrinsic>/call_proc_by_name";
+const INTRINSIC_DEOPT: &str = "<intrinsic>/deopt";
 
 struct MetaValue<'ctx> {
     tag: IntValue<'ctx>,
@@ -99,7 +100,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.val_type.ptr_type(AddressSpace::Generic).into(),
                 self.context.i32_type().into()
             ], false);
-            let deopt_func = self.module.add_function("<intrinsic>/deopt", deopt_func_sig, Some(Linkage::External));
+            let deopt_func = self.module.add_function(INTRINSIC_DEOPT, deopt_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&deopt_func, pads::deopt::handle_deopt as usize);
 
 
@@ -600,7 +601,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let parameter_count = Proc::from_id(proc_id.clone()).unwrap().parameter_names();
 
                 self.builder.build_call(
-                    self.module.get_function("<intrinsic>/deopt").unwrap(),
+                    self.module.get_function(INTRINSIC_DEOPT).unwrap(),
                     &[
                         func.get_nth_param(0).unwrap().into(), //out: *mut auxtools::raw_types::values::Value,
                         self.context.i32_type().const_int(proc_id.0 as u64, false).into(), //proc_id: auxtools::raw_types::procs::ProcId,
