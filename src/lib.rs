@@ -22,10 +22,12 @@ use auxtools::hooks::call_counts;
 
 use log::LevelFilter;
 use std::collections::HashMap;
-use std::borrow::BorrowMut;
+use std::borrow::{BorrowMut, Borrow};
 use std::panic::{UnwindSafe, catch_unwind};
-use dmasm::format_disassembly;
+use dmasm::{format_disassembly, Instruction};
 use std::process::exit;
+use dmasm::operands::Variable;
+use std::ffi::{CStr, CString};
 
 
 pub struct DisassembleEnv;
@@ -108,6 +110,31 @@ pub fn dump_call_count() {
     Ok(Value::null())
 }
 
+pub fn var_desc(v: &Variable) -> String {
+    match v {
+        Variable::Null => "Null",
+        Variable::World => "World",
+        Variable::Usr => "Usr",
+        Variable::Src => "Src",
+        Variable::Args => "Args",
+        Variable::Dot => "Dot",
+        Variable::Cache => "Cache",
+        Variable::CacheKey => "CacheKey",
+        Variable::CacheIndex => "CacheIndex",
+        Variable::Arg(_) => "Arg",
+        Variable::Local(_) => "Local",
+        Variable::Global(_) => "Global",
+        Variable::SetCache(a, b) => return format!("SetCache({}, {})", var_desc(a.borrow()), var_desc(b.borrow())),
+        Variable::Initial(_) => "Initial",
+        Variable::IsSaved(_) => "IsSaved",
+        Variable::Field(_) => "Field",
+        Variable::StaticVerb(_) => "StaticVerb",
+        Variable::DynamicVerb(_) => "DynamicVerb",
+        Variable::StaticProc(_) => "StaticProc",
+        Variable::DynamicProc(_) => "DynamicProc",
+    }.to_string()
+}
+
 #[hook("/proc/dump_opcode_count")]
 pub fn dump_opcode_count() {
     log::info!("[DOC] Dump opcode counts");
@@ -125,7 +152,25 @@ pub fn dump_opcode_count() {
                 for node in nodes {
                     match node {
                         dmasm::Node::Instruction(insn, _) => {
-                            *map.entry(insn.op_name()).or_default().borrow_mut() += u64::from(count.count)
+
+                            let mut name = insn.op_name();
+                            match insn {
+                                Instruction::Call(v, _) => {
+                                    name = format!("{} {}", name, var_desc(&v))
+                                },
+                                Instruction::CallStatement(v, _) => {
+                                    name = format!("{} {}", name, var_desc(&v))
+                                },
+                                Instruction::GetVar(v) => {
+                                    name = format!("{} {}", name, var_desc(&v))
+                                }
+                                Instruction::SetVar(v) => {
+                                    name = format!("{} {}", name, var_desc(&v))
+                                }
+                                _ => {}
+                            }
+
+                            *map.entry(name).or_default().borrow_mut() += u64::from(count.count)
                         }
                         _ => {}
                     }
@@ -167,6 +212,7 @@ pub fn dump_opcodes(list: Value) {
 
             let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
 
+            log::info!("{:?}", unsafe { &*proc.entry });
             log::info!("{}", format_disassembly(&nodes, None));
         } else {
             log::error!("Function not found {}", name)
