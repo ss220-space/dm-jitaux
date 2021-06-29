@@ -276,6 +276,46 @@ impl<'ctx> CodeGen<'ctx, '_> {
         return self.builder.build_bitcast(args, self.val_type.ptr_type(Generic), "cast_to_ptr").into_pointer_value();
     }
 
+    // Actual return type is i1/bool
+    fn emit_check_is_true(&self, value: MetaValue<'ctx>) -> IntValue<'ctx> {
+        let is_null = self.builder.build_int_compare(IntPredicate::EQ, value.tag, self.const_tag(ValueTag::Null), "is_null");
+        let is_x22 = self.builder.build_int_compare(IntPredicate::EQ, value.tag, self.context.i8_type().const_int(0x22, false), "is_x22");
+
+        let is_false_tag = self.builder.build_or(is_null, is_x22, "check_false_tag");
+
+        let is_num = self.builder.build_int_compare(IntPredicate::EQ, value.tag, self.const_tag(ValueTag::Number), "is_num");
+        let is_str = self.builder.build_int_compare(IntPredicate::EQ, value.tag, self.const_tag(ValueTag::String), "is_str");
+
+        let not_num_or_not_zero = self.builder.build_or(
+            self.builder.build_not(is_num, "!is_num"),
+            self.builder.build_float_compare(
+                FloatPredicate::UNE,
+                self.builder.build_bitcast(value.data, self.context.f32_type(), "cast_f32").into_float_value(),
+                self.context.f32_type().const_zero(),
+                "check_ne_zero"
+            ),
+            "not_num_or_not_zero"
+        );
+
+        let not_str_or_not_zero = self.builder.build_or(
+            self.builder.build_not(is_str, "!is_str"),
+            self.builder.build_int_compare(IntPredicate::NE, value.data.into_int_value(), self.context.i32_type().const_zero(), "check_ne_zero"),
+            "not_str_or_not_zero"
+        );
+
+
+        // = !(is_null || is_x22) && (!is_num || value != 0.0) && (!is_str || value != 0)
+        return self.builder.build_and(
+            self.builder.build_not(is_false_tag, "not_(null_or_x22)"),
+            self.builder.build_and(
+                not_num_or_not_zero,
+                not_str_or_not_zero,
+                "is_true_data"
+            ),
+            "check_is_true"
+        )
+    }
+
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
         match ir {
 
@@ -497,16 +537,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::Test => {
                 let ptr = self.stack_loc.pop().unwrap();
                 let value = self.builder.build_load(ptr, "read_stack").into_struct_value();
-                let value_type = self.builder.build_extract_value(value, 0, "type").unwrap().into_int_value();
-
-                // is_true on byond is valueTag != 0x0 && (valueTag != 0x2A || valueData != 0.0), where 0x2A is tag for Number
-                let ne_null = self.builder.build_int_compare(IntPredicate::NE, value_type, self.context.i8_type().const_zero(), "check_null");
-                let ne_num = self.builder.build_int_compare(IntPredicate::NE, value_type, self.context.i8_type().const_int(0x2a, false), "check_number");
-
-                let value_data_i32 = self.builder.build_extract_value(value, 1, "data").unwrap().into_int_value();
-                let value_data = self.builder.build_bitcast(value_data_i32, self.context.f32_type(), "cast_f32").into_float_value();
-                let ne_zero = self.builder.build_float_compare(FloatPredicate::ONE, value_data, self.context.f32_type().const_zero(), "check_zero");
-                let res = self.builder.build_and(ne_null, self.builder.build_or(ne_num, ne_zero, "ne_num or ne_zero"), "ne_null and (ne_num or ne_zero)");
+                let res = self.emit_check_is_true(self.emit_load_meta_value(value));
 
                 self.test_res = Some(res);
             }
