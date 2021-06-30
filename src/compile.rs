@@ -17,12 +17,21 @@ use crate::codegen::CodeGen;
 pub fn compile_and_call(proc_name: auxtools::Value) {
     guard(|| {
         LLVM_CONTEXT.with(|val| {
-            compile_proc(
-                unsafe { val.context_ref.as_ref() },
-                val.module.as_ref().unwrap(),
-                val.execution_engine.as_ref().unwrap(),
-                Proc::find(proc_name.as_string().unwrap()).unwrap()
-            );
+            let mut override_id = 0;
+            let name = proc_name.as_string().unwrap();
+            loop {
+                if let Some(proc) = Proc::find_override(&name, override_id) {
+                    compile_proc(
+                        unsafe { val.context_ref.as_ref() },
+                        val.module.as_ref().unwrap(),
+                        val.execution_engine.as_ref().unwrap(),
+                        proc
+                    );
+                    override_id += 1;
+                } else {
+                    break
+                }
+            }
         });
 
         Result::Ok(Value::null())
@@ -42,10 +51,10 @@ pub fn install_hooks() {
 
             let mut curr_function = module.get_first_function();
             while curr_function.is_some() {
-                if let Some(func) = curr_function {
-                    let name = func.get_name().to_str().unwrap();
+                if let Some(func_value) = curr_function {
+                    let name = func_value.get_name().to_str().unwrap();
 
-                    if !name.starts_with("<intrinsic>/") && func.get_intrinsic_id() == 0 {
+                    if !name.starts_with("<intrinsic>/") && func_value.get_intrinsic_id() == 0 {
                         log::info!("installing {}", name);
                         installed.push(name.to_string());
                         let func: auxtools::hooks::ByondProcFunc = unsafe {
@@ -54,7 +63,14 @@ pub fn install_hooks() {
 
                         log::info!("target is {} at {:?}", name, func as (*mut ()));
 
-                        auxtools::hooks::chad_hook(name, func).unwrap();
+                        // TODO: cleanup
+                        let proc_id = if let Some(override_pos) = name.rfind('.') {
+                            let override_id = name[(override_pos + 1)..].to_string().parse::<u32>().unwrap() - 1;
+                            Proc::find_override(&name[..override_pos], override_id).unwrap().id
+                        } else {
+                            Proc::find(name).unwrap().id
+                        };
+                        auxtools::hooks::chad_hook_by_id(proc_id, func);
                     }
                 }
 
@@ -121,7 +137,12 @@ thread_local! {
     static LLVM_CONTEXT: Pin<Box<ModuleContext<'static>>> = ModuleContext::new()
 }
 
-fn compile_proc<'ctx>(context: &'static Context, module: &'ctx Module<'static>, execution_engine: &'ctx ExecutionEngine<'static>, proc: auxtools::Proc) {
+fn compile_proc<'ctx>(
+    context: &'static Context,
+    module: &'ctx Module<'static>,
+    execution_engine: &'ctx ExecutionEngine<'static>,
+    proc: auxtools::Proc
+) {
     log::info!("Trying compile {}", proc.path);
 
     // Take bytecode of proc to compile
