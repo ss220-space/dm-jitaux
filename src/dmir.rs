@@ -174,7 +174,6 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::CallGlob(arg_count, callee) => {
                         if callee.0 == "/dm_jitaux_deopt" {
                             irs.push(DMIR::Deopt(data.offset, proc.id));
-                            irs.push(DMIR::EnterBlock(format!("post_deopt_{}", data.offset)));
                             gen_push_null(&mut irs);
                         } else {
                             gen_push_null(&mut irs);

@@ -2,7 +2,7 @@ use inkwell::{IntPredicate, FloatPredicate, AddressSpace};
 use inkwell::context::Context;
 use inkwell::module::{Module, Linkage};
 use inkwell::builder::Builder;
-use inkwell::values::{PointerValue, StructValue, IntValue, BasicValueEnum, FunctionValue, AnyValue};
+use inkwell::values::{PointerValue, StructValue, IntValue, BasicValueEnum, FunctionValue, AnyValue, PhiValue};
 use std::collections::HashMap;
 use inkwell::types::StructType;
 use inkwell::execution_engine::ExecutionEngine;
@@ -14,25 +14,34 @@ use auxtools::Proc;
 use crate::dmir::DMIR;
 use std::borrow::Borrow;
 use crate::pads;
+use std::ops::Deref;
+use std::rc::Rc;
+use std::cell::{RefCell, Ref, RefMut};
 
 pub struct CodeGen<'ctx, 'a> {
     context: &'ctx Context,
     pub(crate) module: &'a Module<'ctx>,
     builder: Builder<'ctx>,
     execution_engine: &'a ExecutionEngine<'ctx>,
-    stack_data: StackData<'ctx>,
+    stack_loc: Vec<StructValue<'ctx>>,
     locals: HashMap<u32, PointerValue<'ctx>>,
     cache: Option<StructValue<'ctx>>,
     val_type: StructType<'ctx>,
     test_res: Option<IntValue<'ctx>>,
-    block_map: HashMap<String, BasicBlock<'ctx>>,
+    block_map: BlockMap<'ctx>,
     block_ended: bool,
 }
 
+type BlockMap<'ctx> = HashMap<String, LabelBlockInfo<'ctx>>;
 
 const INTRINSIC_CALL_PROC_BY_ID: &str = "<intrinsic>/call_proc_by_id";
 const INTRINSIC_CALL_PROC_BY_NAME: &str = "<intrinsic>/call_proc_by_name";
 const INTRINSIC_DEOPT: &str = "<intrinsic>/deopt";
+
+struct LabelBlockInfo<'ctx> {
+    block: BasicBlock<'ctx>,
+    phi: Vec<PhiValue<'ctx>>
+}
 
 struct MetaValue<'ctx> {
     tag: IntValue<'ctx>,
@@ -53,59 +62,19 @@ impl MetaValue<'_> {
     }
 }
 
-struct StackData<'ctx> {
-    stack_loc: Vec<PointerValue<'ctx>>,
-    top: usize
-}
 
 struct StackManager<'ctx, 'a, 'b> {
     code_gen: &'a mut CodeGen<'ctx, 'b>
 }
 
-impl<'ctx> StackData<'ctx> {
-
-    fn new() -> Self {
-        return Self {
-            stack_loc: vec![],
-            top: 0
-        }
-    }
-
-    fn push_slot(&mut self, val_type: &StructType<'ctx>, builder: &Builder<'ctx>) -> PointerValue<'ctx> {
-        let slot = if self.stack_loc.len() == self.top {
-            let slot = builder.build_alloca(*val_type, "alloc_slot");
-            self.stack_loc.push(slot);
-            slot
-        } else {
-            self.stack_loc[self.top]
-        };
-        self.top += 1;
-        return slot;
-    }
-
-    fn pop_slot(&mut self) -> PointerValue<'ctx> {
-        self.top -= 1;
-        return self.stack_loc[self.top];
-    }
-}
 
 impl<'ctx> StackManager<'ctx, '_, '_> {
-    fn allocate_slot(&mut self) -> PointerValue<'ctx> {
-        self.code_gen.stack_data.push_slot(&self.code_gen.val_type, &self.code_gen.builder)
-    }
-
-    fn pop_slot(&mut self) -> PointerValue<'ctx> {
-        self.code_gen.stack_data.pop_slot()
-    }
-
     fn push(&mut self, value: StructValue<'ctx>) {
-        let slot = self.allocate_slot();
-        self.code_gen.builder.build_store(slot, value);
+        self.code_gen.stack_loc.push(value);
     }
 
     fn pop(&mut self) -> StructValue<'ctx> {
-        let slot = self.pop_slot();
-        return self.code_gen.builder.build_load(slot, "load_from_stack").into_struct_value();
+        return self.code_gen.stack_loc.pop().unwrap();
     }
 }
 
@@ -114,6 +83,54 @@ impl<'ctx, 'b> CodeGen<'ctx, 'b> {
         return StackManager {
             code_gen: self
         }
+    }
+}
+
+struct BlockBuilder<'ctx, 'a> {
+    context: &'ctx Context,
+    builder: &'a Builder<'ctx>,
+    val_type: &'a StructType<'ctx>,
+    block_map: &'a mut BlockMap<'ctx>
+}
+
+impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
+    fn emit_postponed_block(
+        &'a mut self, func: FunctionValue<'ctx>, lbl: &String, stack_size: usize
+    ) -> &'a LabelBlockInfo<'ctx> {
+        match self.block_map.entry(lbl.clone()) {
+            Entry::Vacant(v) => {
+                let current_block = self.builder.get_insert_block().unwrap();
+                let new_block = self.context.append_basic_block(func, lbl);
+
+                self.builder.position_at_end(new_block);
+                let mut phi: Vec<PhiValue<'ctx>> = Vec::new();
+                for _ in 0..stack_size {
+                    phi.push(self.builder.build_phi(self.val_type.clone(), "stack_loc"));
+                }
+                self.builder.position_at_end(current_block);
+
+                let target_info =
+                    LabelBlockInfo {
+                        block: new_block,
+                        phi
+                    };
+                v.insert(target_info)
+            }
+            Entry::Occupied(v) => {
+                v.into_mut()
+            }
+        }
+    }
+
+    fn emit_jump_target_block(&'a mut self, stack_loc: &Vec<StructValue<'ctx>>, func: FunctionValue<'ctx>, lbl: &String) -> &'a LabelBlockInfo<'ctx> {
+        let current_block = self.builder.get_insert_block().unwrap();
+        let stack = stack_loc;
+        let label_block_info = self.emit_postponed_block(func, lbl, stack.len());
+        for (idx, loc) in stack.iter().enumerate() {
+            label_block_info.phi[idx].add_incoming(&[(loc, current_block)]);
+        }
+
+        label_block_info
     }
 }
 
@@ -225,7 +242,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             module,
             builder,
             execution_engine,
-            stack_data: StackData::new(),
+            stack_loc: Vec::new(),
             locals: HashMap::new(),
             cache: None,
             val_type,
@@ -382,17 +399,21 @@ impl<'ctx> CodeGen<'ctx, '_> {
         )
     }
 
-    fn emit_conditional_jump(&mut self, func: FunctionValue<'ctx>, lbl: String, condition: IntValue<'ctx>) {
+    fn emit_conditional_jump(&mut self, func: FunctionValue<'ctx>, lbl: &String, condition: IntValue<'ctx>) {
         let next = self.context.append_basic_block(func, "next");
 
-        let block = match self.block_map.entry(lbl.clone()) {
-            Entry::Occupied(o) => o.into_mut(),
-            Entry::Vacant(v) => v.insert(self.context.append_basic_block(func, lbl.clone().as_str()))
+        let mut block_builder = BlockBuilder {
+            context: self.context,
+            builder: &self.builder,
+            val_type: &self.val_type,
+            block_map: &mut self.block_map
         };
+        let target = block_builder.emit_jump_target_block(&self.stack_loc, func, lbl);
+        let target_block = target.block.clone();
 
         self.builder.build_conditional_branch(
             condition,
-            block.clone(),
+            target_block,
             next,
         );
 
@@ -425,9 +446,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let receiver_value = self.cache.unwrap();
 
-                let out = self.stack().allocate_slot();
+                let out = self.builder.build_alloca(self.val_type, "field_get_result");
                 self.builder.build_call(get_var_func, &[out.into(), receiver_value.into(), self.context.i32_type().const_int(name_id.clone() as u64, false).into()], "get_cache_field");
 
+                let out_value = self.builder.build_load(out, "out_value").into_struct_value();
+                self.stack().push(out_value);
                 // self.dbg("GetVar");
                 // self.dbg_val(self.builder.build_load(out, "load_dbg").into_struct_value());
             }
@@ -487,7 +510,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let usr = func.get_nth_param(2).unwrap().into_struct_value(); // TODO: Proc can change self usr
 
-                let out = self.stack().allocate_slot();
+                let out = self.builder.build_alloca(self.val_type, "call_result");
 
                 self.builder.build_call(
                     call_proc_by_id,
@@ -505,6 +528,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     ],
                     "call_proc_by_id",
                 );
+
+                let out_value = self.builder.build_load(out, "call_result_value").into_struct_value();
+                self.stack().push(out_value);
             }
             DMIR::CallProcByName(string_id, proc_call_type, arg_count) => {
                 let src = self.stack().pop();
@@ -515,7 +541,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let usr = func.get_nth_param(2).unwrap().into_struct_value(); // TODO: Proc can change self usr
 
-                let out = self.stack().allocate_slot();
+                let out = self.builder.build_alloca(self.val_type, "call_result");
 
                 self.builder.build_call(
                     call_proc_by_name,
@@ -532,6 +558,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     ],
                     "call_proc_by_name",
                 );
+
+                let out_value = self.builder.build_load(out, "call_result_value").into_struct_value();
+                self.stack().push(out_value);
             }
             DMIR::PushInt(val) => {
                 let out = self.builder.build_alloca(self.val_type, "push_int");
@@ -563,7 +592,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(result_val);
             }
             DMIR::Pop => {
-                self.stack().pop_slot();
+                self.stack().pop();
             }
             // Return stack top from proc
             DMIR::Ret => {
@@ -579,8 +608,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             // Set indexed local to stack top
             DMIR::SetLocal(idx) => {
-                let ptr = self.stack().pop_slot();
-                self.locals.insert(idx.clone(), ptr);
+                let value = self.stack().pop();
+                let local = self.builder.build_alloca(self.val_type, "local");
+                self.builder.build_store(local, value);
+                self.locals.insert(idx.clone(), local);
             }
             // Push indexed local value to stack
             DMIR::GetLocal(idx) => {
@@ -606,22 +637,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.test_res = Some(res);
             }
             DMIR::JZ(lbl) => {
-                // this is our next block
-                let next = self.context.append_basic_block(func, "next");
-
-                let block = match self.block_map.entry(lbl.clone()) {
-                    Entry::Occupied(o) => o.into_mut(),
-                    Entry::Vacant(v) => v.insert(self.context.append_basic_block(func, lbl.clone().as_str()))
-                };
-
-
-                self.builder.build_conditional_branch(
-                    self.builder.build_not(self.test_res.unwrap(), "jz"), // if test_res == false
-                    block.clone(),
-                    next,
-                );
-
-                self.builder.position_at_end(next);
+                self.emit_conditional_jump(func, lbl, self.builder.build_not(self.test_res.unwrap(), "jz"))
             }
             DMIR::Dup => {
                 let value = self.stack().pop();
@@ -634,25 +650,39 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let arg_is_true = self.emit_check_is_true(arg);
                 let if_arg_false = self.builder.build_not(arg_is_true, "jz");
-                self.emit_conditional_jump(func, lbl.clone(), if_arg_false)
+                self.emit_conditional_jump(func, lbl, if_arg_false)
             }
             DMIR::TestJNZ(lbl) => {
                 let arg_value = self.stack().pop();
                 let arg = self.emit_load_meta_value(arg_value);
 
                 let arg_is_true = self.emit_check_is_true(arg);
-                self.emit_conditional_jump(func, lbl.clone(), arg_is_true)
+                self.emit_conditional_jump(func, lbl, arg_is_true)
             }
             DMIR::EnterBlock(lbl) => {
-                let block = match self.block_map.entry(lbl.clone()) {
-                    Entry::Occupied(o) => o.into_mut(),
-                    Entry::Vacant(v) => v.insert(self.context.append_basic_block(func, lbl.clone().as_str()))
+
+                let mut block_builder = BlockBuilder {
+                    context: self.context,
+                    builder: &self.builder,
+                    val_type: &self.val_type,
+                    block_map: &mut self.block_map
                 };
+                let target = if !self.block_ended {
+                    block_builder.emit_jump_target_block(&self.stack_loc, func, lbl)
+                } else {
+                    self.block_map.get(lbl).unwrap()
+                };
+
+                self.stack_loc.clear();
+                for phi in target.phi.iter() {
+                    self.stack_loc.push(phi.as_basic_value().into_struct_value());
+                }
+
                 if !self.block_ended {
-                    self.builder.build_unconditional_branch(block.clone());
+                    self.builder.build_unconditional_branch(target.block);
                 }
                 self.block_ended = false;
-                self.builder.position_at_end(block.clone());
+                self.builder.position_at_end(target.block);
             }
             DMIR::End => {
                 if !self.block_ended {
@@ -660,12 +690,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 }
             }
             DMIR::Deopt(offset, proc_id) => {
-                let out_stack_type = self.val_type.array_type(self.stack_data.top as u32);
+                let out_stack_type = self.val_type.array_type(self.stack_loc.len() as u32);
                 let stack_out_ptr = self.builder.build_alloca(out_stack_type, "out_stack");
                 let mut stack_out_array = out_stack_type.const_zero();
-                for (pos, loc) in self.stack_data.stack_loc[..self.stack_data.top].iter().enumerate() {
-                    let load_stack = self.builder.build_load(loc.clone(), "load_value_stack_loc").into_struct_value();
-                    stack_out_array = self.builder.build_insert_value(stack_out_array, load_stack, pos as u32, "store_value_from_stack").unwrap().into_array_value();
+                for (pos, loc) in self.stack_loc.iter().enumerate() {
+                    stack_out_array = self.builder.build_insert_value(stack_out_array, loc.clone(), pos as u32, "store_value_from_stack").unwrap().into_array_value();
                 }
                 self.builder.build_store(stack_out_ptr, stack_out_array);
 
@@ -692,7 +721,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         self.context.i32_type().const_int(offset.clone() as u64, false).into(), //offset: u32,
                         self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)).into(), //test_flag: bool,
                         self.builder.build_bitcast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //stack: *const auxtools::raw_types::values::Value,
-                        self.context.i32_type().const_int(self.stack_data.top as u64, false).into(), //stack_size: u32,
+                        self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(), //stack_size: u32,
                         self.cache.unwrap_or(self.val_type.const_zero()).into(), //cached_datum: auxtools::raw_types::values::Value,
                         func.get_nth_param(1).unwrap().into(), //src: auxtools::raw_types::values::Value,
                         func.get_nth_param(3).unwrap().into(), //args: *const auxtools::raw_types::values::Value,
@@ -703,13 +732,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     "call_deopt",
                 );
 
-
                 self.builder.build_return(None);
-                self.block_ended = true;
+                let post_deopt_block = self.context.append_basic_block(func, "post_deopt");
+                self.builder.position_at_end(post_deopt_block);
             }
             DMIR::CheckTypeDeopt(stack_pos, tag, deopt) => {
-                let stack_value_ptr = self.stack_data.stack_loc[self.stack_data.top - 1 - (stack_pos.clone() as usize)];
-                let stack_value = self.builder.build_load(stack_value_ptr, "load_value_to_check").into_struct_value();
+                let stack_value = self.stack_loc[self.stack_loc.len() - 1 - (stack_pos.clone() as usize)];
                 let actual_tag = self.emit_load_meta_value(stack_value).tag;
 
                 let next_block = self.context.append_basic_block(func, "next");
@@ -724,9 +752,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 self.builder.position_at_end(deopt_block);
                 self.emit(deopt.borrow(), func);
+                self.builder.build_unconditional_branch(next_block);
 
                 self.builder.position_at_end(next_block);
-                self.block_ended = false;
             }
             _ => {}
         }
