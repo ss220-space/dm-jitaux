@@ -19,6 +19,7 @@ pub enum DMIR {
     GetCacheField(u32),
     PushCache,
     FloatAdd,
+    FloatSub,
     FloatMul,
     FloatCmp(inkwell::FloatPredicate),
     FloatAbs,
@@ -152,6 +153,11 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
                         irs.push(DMIR::CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
                         irs.push(DMIR::FloatAdd)
+                    }
+                    Instruction::Sub => {
+                        irs.push(DMIR::CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+                        irs.push(DMIR::CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+                        irs.push(DMIR::FloatSub)
                     }
                     Instruction::Mul => {
                         irs.push(DMIR::FloatMul)

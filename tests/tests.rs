@@ -67,3 +67,8 @@ fn test_abs() {
 fn test_if_bool_ops() {
     run_hook_and_assert_result(vec!("test_if_bool_ops.dm"));
 }
+
+#[test]
+fn test_sub() {
+    run_hook_and_assert_result(vec!("test_sub.dm"));
+}
