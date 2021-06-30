@@ -501,7 +501,15 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let arg = self.emit_load_meta_value(arg_value);
                 let arg_num = self.emit_to_number_or_zero(func, arg);
                 let fabs_type = self.context.f32_type().fn_type(&[self.context.f32_type().into()], false);
-                let fabs = self.module.add_function("llvm.fabs.f32", fabs_type, None);
+
+                let fabs_name = "llvm.fabs.f32";
+
+                let fabs =
+                    if let Some(func) = self.module.get_function(fabs_name) {
+                        func
+                    } else {
+                        self.module.add_function(fabs_name, fabs_type, None)
+                    };
                 let result = self.builder.build_call(fabs, &[arg_num.data.into_float_value().into()], "abs").try_as_basic_value().left().unwrap().into_float_value();
 
                 let result_i32 = self.builder.build_bitcast(result, self.context.i32_type(), "cast_result").into_int_value();
