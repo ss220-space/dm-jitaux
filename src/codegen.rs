@@ -14,9 +14,6 @@ use auxtools::Proc;
 use crate::dmir::DMIR;
 use std::borrow::Borrow;
 use crate::pads;
-use std::ops::Deref;
-use std::rc::Rc;
-use std::cell::{RefCell, Ref, RefMut};
 
 pub struct CodeGen<'ctx, 'a> {
     context: &'ctx Context,

@@ -3,7 +3,7 @@ use dmasm::{format_disassembly};
 use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine};
 use inkwell::module::Module;
-use inkwell::values::AnyValue;
+use inkwell::values::{AnyValue, FunctionValue};
 use inkwell::OptimizationLevel;
 use crate::{DisassembleEnv, guard, dmir};
 use std::mem::transmute_copy;
@@ -11,7 +11,6 @@ use inkwell::passes::PassManager;
 use std::ptr::NonNull;
 use std::marker::PhantomPinned;
 use std::pin::Pin;
-use auxtools::raw_types::strings::StringId;
 use crate::codegen::CodeGen;
 
 #[hook("/proc/compile_proc")]

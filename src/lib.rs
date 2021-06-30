@@ -16,7 +16,6 @@ use auxtools::{hook, CompileTimeHook, StringRef, raw_types, DMResult, Runtime};
 use auxtools::Value;
 use auxtools::Proc;
 use auxtools::inventory;
-use auxtools::byond_string;
 use auxtools::hooks::call_counts;
 
 
@@ -27,7 +26,6 @@ use std::panic::{UnwindSafe, catch_unwind};
 use dmasm::{format_disassembly, Instruction};
 use std::process::exit;
 use dmasm::operands::Variable;
-use std::ffi::{CStr, CString};
 
 
 pub struct DisassembleEnv;
