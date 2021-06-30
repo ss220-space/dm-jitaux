@@ -28,9 +28,12 @@ pub enum DMIR {
     Ret,
     Test,
     JZ(String),
+    Dup, // Duplicate last value on stack
+    TestJZ(String),  // Perform Test and jump without changing test_flag
+    TestJNZ(String), // Perform Test and jump without changing test_flag
     EnterBlock(String),
     Deopt(u32, ProcId),
-    CheckTypeDeopt(u32, ValueTag, Box<DMIR>),
+    CheckTypeDeopt(u32, ValueTag, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
     CallProcByName(StringId, u8, u32),
     End
@@ -118,6 +121,10 @@ fn decode_cmp(op: FloatPredicate, data: &DebugData, proc: &Proc, out: &mut Vec<D
     out.push(DMIR::FloatCmp(op))
 }
 
+fn gen_push_null(out: &mut Vec<DMIR>) {
+    out.push(DMIR::PushVal(ValueOpRaw { tag: ValueTag::Null as u8, data: 0 }));
+}
+
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
 
     // output for intermediate operations sequence
@@ -168,8 +175,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         if callee.0 == "/dm_jitaux_deopt" {
                             irs.push(DMIR::Deopt(data.offset, proc.id));
                             irs.push(DMIR::EnterBlock(format!("post_deopt_{}", data.offset)));
+                            gen_push_null(&mut irs);
                         } else {
-                            irs.push(DMIR::PushVal(ValueOpRaw { tag: ValueTag::Null as u8, data: 0 }));
+                            gen_push_null(&mut irs);
                             let id = Proc::find(callee.0).unwrap().id;
                             irs.push(DMIR::CallProcById(id, 2, arg_count))
                         }
@@ -192,6 +200,16 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Jz(lbl) => {
                         irs.push(DMIR::JZ(lbl.0))
+                    }
+                    Instruction::JmpAnd(lbl) => {
+                        irs.push(DMIR::Dup);
+                        irs.push(DMIR::TestJZ(lbl.0));
+                        irs.push(DMIR::Pop);
+                    }
+                    Instruction::JmpOr(lbl) => {
+                        irs.push(DMIR::Dup);
+                        irs.push(DMIR::TestJNZ(lbl.0));
+                        irs.push(DMIR::Pop);
                     }
                     Instruction::PushInt(i32) => {
                         irs.push(DMIR::PushInt(i32))

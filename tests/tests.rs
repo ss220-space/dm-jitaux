@@ -62,3 +62,8 @@ fn test_call_dynamic() {
 fn test_abs() {
     run_hook_and_assert_result(vec!("test_abs.dm"));
 }
+
+#[test]
+fn test_if_bool_ops() {
+    run_hook_and_assert_result(vec!("test_if_bool_ops.dm"));
+}
