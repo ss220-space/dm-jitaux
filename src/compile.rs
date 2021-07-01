@@ -12,6 +12,7 @@ use std::ptr::NonNull;
 use std::marker::PhantomPinned;
 use std::pin::Pin;
 use crate::codegen::CodeGen;
+use inkwell::attributes::AttributeLoc;
 
 #[hook("/proc/compile_proc")]
 pub fn compile_and_call(proc_name: auxtools::Value) {
@@ -63,14 +64,11 @@ pub fn install_hooks() {
 
                         log::info!("target is {} at {:?}", name, func as (*mut ()));
 
+                        let proc_id_attrib = func_value.get_string_attribute(AttributeLoc::Function, "proc_id").unwrap();
                         // TODO: cleanup
-                        let proc_id = if let Some(override_pos) = name.rfind('.') {
-                            let override_id = name[(override_pos + 1)..].to_string().parse::<u32>().unwrap() - 1;
-                            Proc::find_override(&name[..override_pos], override_id).unwrap().id
-                        } else {
-                            Proc::find(name).unwrap().id
-                        };
-                        auxtools::hooks::chad_hook_by_id(proc_id, func);
+                        let proc_id = auxtools::raw_types::procs::ProcId(proc_id_attrib.get_string_value().to_string_lossy().parse::<u32>().unwrap());
+                        let proc = Proc::from_id(proc_id).unwrap();
+                        auxtools::hooks::chad_hook_by_id(proc.id, func);
                     }
                 }
 
@@ -166,6 +164,9 @@ fn compile_proc<'ctx>(
     code_gen.init_builtins();
 
     let func = code_gen.create_jit_func(proc.path.as_str());
+
+    let proc_id_attr = context.create_string_attribute("proc_id", format!("{}", proc.id.0).as_str());
+    func.add_attribute(AttributeLoc::Function, proc_id_attr);
 
     // Emit LLVM IR nodes from DMIR
     for ir in irs {
