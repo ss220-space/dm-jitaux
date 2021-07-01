@@ -30,6 +30,7 @@ pub enum DMIR {
     Pop,
     Ret,
     Test,
+    IsNull,
     JZ(String),
     Dup, // Duplicate last value on stack
     Swap, // Swap values on stack top: ..., b, a -> ..., a, b
@@ -250,6 +251,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::AugSub(var) => {
                         decode_float_aug_instruction(&var, DMIR::FloatSub, &data, &proc, &mut irs)
+                    }
+                    Instruction::IsNull => {
+                        irs.push(DMIR::IsNull)
                     }
                     _ => {
                         log::info!("Unsupported insn {}", insn);

@@ -433,6 +433,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.position_at_end(next);
     }
 
+    fn emit_boolean_to_number(&self, bool: IntValue<'ctx>) -> MetaValue<'ctx> {
+        let bool_f32 = self.builder.build_unsigned_int_to_float(bool, self.context.f32_type(), "to_f32");
+        let res_i32 = self.builder.build_bitcast(bool_f32, self.context.i32_type(), "to_i32").into_int_value();
+        return MetaValue::with_tag(ValueTag::Number, res_i32.into(), self);
+    }
+
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
         match ir {
 
@@ -674,6 +680,16 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let arg_ptr = self.builder.build_int_to_ptr(result_ptr_int, self.val_type.ptr_type(Generic), "final_ptr");
                 let arg_value = self.builder.build_load(arg_ptr, "load_arg").into_struct_value();
                 self.stack().push(arg_value)
+            }
+            DMIR::IsNull => {
+                let value = self.stack().pop();
+                let meta = self.emit_load_meta_value(value);
+                let const_null_tag = self.const_tag(ValueTag::Null);
+                let result = self.builder.build_int_compare(IntPredicate::EQ, meta.tag, const_null_tag, "check_null");
+                let meta_value = self.emit_boolean_to_number(result);
+                let result_value = self.emit_store_meta_value(meta_value);
+
+                self.stack().push(result_value);
             }
             DMIR::Test => {
                 let value = self.stack().pop();

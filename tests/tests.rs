@@ -77,3 +77,8 @@ fn test_sub() {
 fn test_aug_op() {
     run_hook_and_assert_result(vec!("test_aug_op.dm"));
 }
+
+#[test]
+fn test_is() {
+    run_hook_and_assert_result(vec!("test_is.dm"));
+}
