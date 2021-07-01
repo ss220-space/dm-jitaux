@@ -30,6 +30,7 @@ pub enum DMIR {
     Test,
     JZ(String),
     Dup, // Duplicate last value on stack
+    Swap, // Swap values on stack top: ..., b, a -> ..., a, b
     TestJZ(String),  // Perform Test and jump without changing test_flag
     TestJNZ(String), // Perform Test and jump without changing test_flag
     EnterBlock(String),

@@ -660,6 +660,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(value);
                 self.stack().push(value);
             }
+            DMIR::Swap => {
+                let a = self.stack().pop();
+                let b = self.stack().pop();
+                self.stack().push(b);
+                self.stack().push(a);
+            }
             DMIR::TestJZ(lbl) => {
                 let arg_value = self.stack().pop();
                 let arg = self.emit_load_meta_value(arg_value);
