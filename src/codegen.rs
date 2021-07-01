@@ -697,6 +697,41 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 self.test_res = Some(res);
             }
+            DMIR::TestEqual => {
+                let second = self.stack().pop();
+                let first = self.stack().pop();
+
+                let first_meta = self.emit_load_meta_value(first);
+                let second_meta = self.emit_load_meta_value(second);
+
+                let const_tag_num = self.const_tag(ValueTag::Number);
+
+                let is_number = self.builder.build_int_compare(IntPredicate::EQ, first_meta.tag, const_tag_num, "is_number");
+
+                let total_eq =
+                    self.builder.build_and(
+                        self.builder.build_int_compare(IntPredicate::EQ, first_meta.tag, second_meta.tag, "check_tag"),
+                        self.builder.build_int_compare(
+                            IntPredicate::EQ,
+                            first_meta.data.into_int_value(),
+                            second_meta.data.into_int_value(),
+                            "check_data"
+                        ),
+                        "total_eq"
+                    );
+
+                let first_f32 = self.builder.build_bitcast(first_meta.data, self.context.f32_type(), "first_f32").into_float_value();
+                let second_f32 = self.builder.build_bitcast(second_meta.data, self.context.f32_type(), "second_f32").into_float_value();
+
+                let result = self.builder.build_select(
+                    is_number,
+                    self.builder.build_float_compare(FloatPredicate::UEQ, first_f32, second_f32, "compare_num"),
+                    total_eq,
+                    "select_compare"
+                ).into_int_value();
+
+                self.test_res = Some(result);
+            }
             DMIR::Not => {
                 let value = self.stack().pop();
                 let result = self.emit_check_is_true(self.emit_load_meta_value(value));
@@ -719,6 +754,14 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let value = self.stack().pop();
                 self.stack().push(value);
                 self.stack().push(value);
+            }
+            DMIR::DupX1 => {
+                let b = self.stack().pop();
+                let a = self.stack().pop();
+
+                self.stack().push(b);
+                self.stack().push(a);
+                self.stack().push(b);
             }
             DMIR::Swap => {
                 let a = self.stack().pop();

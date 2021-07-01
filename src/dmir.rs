@@ -31,9 +31,11 @@ pub enum DMIR {
     Ret,
     Not,
     Test,
+    TestEqual,
     IsNull,
     JZ(String),
     Dup, // Duplicate last value on stack
+    DupX1, // Duplicate top value and insert one slot back ..., a, b -> ..., b, a, b
     Swap, // Swap values on stack top: ..., b, a -> ..., a, b
     TestJZ(String),  // Perform Test and jump without changing test_flag
     TestJNZ(String), // Perform Test and jump without changing test_flag
@@ -192,6 +194,11 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Tle => {
                         decode_cmp(FloatPredicate::ULE, &data, &proc, &mut irs);
+                    }
+                    Instruction::Teq => {
+                        irs.push(DMIR::DupX1);
+                        irs.push(DMIR::Swap);
+                        irs.push(DMIR::TestEqual);
                     }
                     Instruction::Not => {
                         irs.push(DMIR::Not)
