@@ -34,6 +34,8 @@ type BlockMap<'ctx> = HashMap<String, LabelBlockInfo<'ctx>>;
 const INTRINSIC_CALL_PROC_BY_ID: &str = "<intrinsic>/call_proc_by_id";
 const INTRINSIC_CALL_PROC_BY_NAME: &str = "<intrinsic>/call_proc_by_name";
 const INTRINSIC_DEOPT: &str = "<intrinsic>/deopt";
+const INTRINSIC_SET_VARIABLE: &str = "<intrinsic>/set_variable";
+
 
 struct LabelBlockInfo<'ctx> {
     block: BasicBlock<'ctx>,
@@ -137,6 +139,20 @@ impl<'ctx> CodeGen<'ctx, '_> {
             let get_variable_signature = self.context.i8_type().fn_type(&[self.val_type.ptr_type(AddressSpace::Generic).into(), self.val_type.into(), self.context.i32_type().into()], false);
             let get_variable_func = self.module.add_function("<intrinsic>/get_variable", get_variable_signature, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&get_variable_func, auxtools::raw_types::funcs::get_variable as usize);
+
+            {
+                let set_variable_sig = self.context.i8_type().fn_type(
+                    &[
+                        self.val_type.into(), // datum: values::Value
+                        self.context.i32_type().into(), // index: strings::StringId
+                        self.val_type.into() // value: values::Value
+                    ],
+                    false
+                );
+
+                let set_variable_func = self.module.add_function(INTRINSIC_SET_VARIABLE, set_variable_sig, Some(Linkage::External));
+                self.execution_engine.add_global_mapping(&set_variable_func, auxtools::raw_types::funcs::set_variable as usize)
+            }
 
             let debug_func_sig = self.context.void_type().fn_type(&[self.context.i8_type().ptr_type(AddressSpace::Generic).into()], false);
             let debug_func = self.module.add_function("<intrinsic>/debug", debug_func_sig, Some(Linkage::External));
@@ -436,10 +452,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             // Read field from cache e.g cache["oxygen"] where "oxygen" is interned string at name_id
             DMIR::GetCacheField(name_id) => {
-                log::debug!("gen get_variable {}", name_id);
                 let get_var_func = self.module.get_function("<intrinsic>/get_variable").unwrap();
-
-                log::debug!("get_var func {}", get_var_func.print_to_string().to_string());
 
                 let receiver_value = self.cache.unwrap();
 
@@ -450,6 +463,22 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(out_value);
                 // self.dbg("GetVar");
                 // self.dbg_val(self.builder.build_load(out, "load_dbg").into_struct_value());
+            }
+            DMIR::SetCacheField(name_id) => {
+                let value = self.stack().pop();
+
+                let set_var_func = self.module.get_function(INTRINSIC_SET_VARIABLE).unwrap();
+                let receiver_value = self.cache.unwrap();
+
+                self.builder.build_call(
+                    set_var_func,
+                    &[
+                        receiver_value.into(),
+                        self.context.i32_type().const_int(name_id.clone() as u64, false).into(),
+                        value.into()
+                    ],
+                    "set_cache_field"
+                );
             }
             // Read two values from stack, add them together, put result to stack
             DMIR::FloatAdd => {

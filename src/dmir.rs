@@ -17,6 +17,7 @@ pub enum DMIR {
     GetArg(u32),
     SetCache,
     GetCacheField(u32),
+    SetCacheField(u32),
     PushCache,
     FloatAdd,
     FloatSub,
@@ -91,6 +92,14 @@ fn decode_get_var(vr: &Variable, out: &mut Vec<DMIR>) {
 fn decode_set_var(vr: &Variable, out: &mut Vec<DMIR>) {
     match vr {
         Variable::Local(idx) => out.push(DMIR::SetLocal(idx.clone())),
+        Variable::SetCache(first, second) => {
+            decode_get_var(first.borrow(), out);
+            out.push(DMIR::SetCache);
+            decode_set_var(second.borrow(), out);
+        }
+        Variable::Field(str) => {
+            out.push(DMIR::SetCacheField(get_string_id(&(str.0)).0))
+        }
         _ => panic!("Not supported")
     }
 }
