@@ -29,6 +29,7 @@ pub enum DMIR {
     PushTestFlag, // Push test flag value as Number
     Pop,
     Ret,
+    Not,
     Test,
     IsNull,
     JZ(String),
@@ -191,6 +192,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Tle => {
                         decode_cmp(FloatPredicate::ULE, &data, &proc, &mut irs);
+                    }
+                    Instruction::Not => {
+                        irs.push(DMIR::Not)
                     }
                     Instruction::Abs => {
                         irs.push(DMIR::FloatAbs)
