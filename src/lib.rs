@@ -235,3 +235,20 @@ pub fn dump_opcodes(list: Value) {
 pub fn exit_test() {
     exit(0);
 }
+
+#[hook("/proc/toggle_dm_jitaux_hooks")]
+pub fn toggle_dm_jitaux_hooks() {
+    unsafe {
+        auxtools::hooks::ENABLE_CHAD_HOOKS = !auxtools::hooks::ENABLE_CHAD_HOOKS;
+        Ok(Value::from(auxtools::hooks::ENABLE_CHAD_HOOKS))
+    }
+
+}
+
+#[hook("/proc/toggle_dm_jitaux_call_counts")]
+pub fn toggle_dm_jitaux_call_counts() {
+    unsafe {
+        auxtools::hooks::ENABLE_CALL_COUNTS = !auxtools::hooks::ENABLE_CALL_COUNTS;
+        Ok(Value::from(auxtools::hooks::ENABLE_CALL_COUNTS))
+    }
+}

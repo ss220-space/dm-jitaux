@@ -35,3 +35,9 @@
 
 /proc/install_compiled()
     CRASH()
+
+/proc/toggle_dm_jitaux_hooks()
+    CRASH()
+
+/proc/toggle_dm_jitaux_call_counts()
+    CRASH()
