@@ -30,6 +30,8 @@ dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.
 |Tl|Float|
 |Tge|Float|
 |Tle|Float|
+|AugAdd|Float|
+|AugSub|Float|
 |Ret|✔️|
 |End|✔️|
 |Test|✔️|

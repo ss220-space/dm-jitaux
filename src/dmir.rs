@@ -128,13 +128,23 @@ fn decode_call(vr: &Variable, arg_count: u32, out: &mut Vec<DMIR>) {
 }
 
 fn decode_cmp(op: FloatPredicate, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
-    out.push(CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
-    out.push(CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
-    out.push(DMIR::FloatCmp(op))
+    build_float_bin_op_deopt(DMIR::FloatCmp(op), data, proc, out);
 }
 
 fn gen_push_null(out: &mut Vec<DMIR>) {
     out.push(DMIR::PushVal(ValueOpRaw { tag: ValueTag::Null as u8, data: 0 }));
+}
+
+fn build_float_bin_op_deopt(action: DMIR, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
+    out.push(CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+    out.push(CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+    out.push(action);
+}
+
+fn decode_float_aug_instruction(var: &Variable, action: DMIR, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
+    decode_get_var(var, out);
+    build_float_bin_op_deopt(action, data, proc, out);
+    decode_set_var(var, out);
 }
 
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
@@ -161,14 +171,10 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         decode_set_var(&vr, &mut irs)
                     },
                     Instruction::Add => {
-                        irs.push(DMIR::CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
-                        irs.push(DMIR::CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
-                        irs.push(DMIR::FloatAdd)
+                        build_float_bin_op_deopt(DMIR::FloatAdd, &data, &proc, &mut irs);
                     }
                     Instruction::Sub => {
-                        irs.push(DMIR::CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
-                        irs.push(DMIR::CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
-                        irs.push(DMIR::FloatSub)
+                        build_float_bin_op_deopt(DMIR::FloatSub, &data, &proc, &mut irs);
                     }
                     Instruction::Mul => {
                         irs.push(DMIR::FloatMul)
@@ -238,6 +244,12 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Pop => {
                         irs.push(DMIR::Pop)
+                    }
+                    Instruction::AugAdd(var) => {
+                        decode_float_aug_instruction(&var, DMIR::FloatAdd, &data, &proc, &mut irs)
+                    }
+                    Instruction::AugSub(var) => {
+                        decode_float_aug_instruction(&var, DMIR::FloatSub, &data, &proc, &mut irs)
                     }
                     _ => {
                         log::info!("Unsupported insn {}", insn);
