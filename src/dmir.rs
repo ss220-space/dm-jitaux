@@ -25,6 +25,7 @@ pub enum DMIR {
     FloatAbs,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
+    PushTestFlag, // Push test flag value as Number
     Pop,
     Ret,
     Test,
@@ -222,6 +223,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::PushVal(op) => {
                         irs.push(DMIR::PushVal(op.raw.unwrap()))
+                    }
+                    Instruction::GetFlag => {
+                        irs.push(DMIR::PushTestFlag);
                     }
                     Instruction::Pop => {
                         irs.push(DMIR::Pop)
