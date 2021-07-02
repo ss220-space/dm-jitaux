@@ -809,6 +809,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     self.block_map.get(lbl).unwrap()
                 };
 
+                self.test_res = None;
                 self.stack_loc.clear();
                 for phi in target.phi.iter() {
                     self.stack_loc.push(phi.as_basic_value().into_struct_value());
