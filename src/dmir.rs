@@ -40,6 +40,7 @@ pub enum DMIR {
     TestJZ(String),  // Perform Test and jump without changing test_flag
     TestJNZ(String), // Perform Test and jump without changing test_flag
     EnterBlock(String),
+    Jmp(String),
     Deopt(u32, ProcId),
     CheckTypeDeopt(u32, ValueTag, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
@@ -234,6 +235,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Jz(lbl) => {
                         irs.push(DMIR::JZ(lbl.0))
+                    }
+                    Instruction::Jmp(lbl) => {
+                        irs.push(DMIR::Jmp(lbl.0))
                     }
                     Instruction::JmpAnd(lbl) => {
                         irs.push(DMIR::Dup);

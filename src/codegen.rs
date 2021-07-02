@@ -784,6 +784,17 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let arg_is_true = self.emit_check_is_true(arg);
                 self.emit_conditional_jump(func, lbl, arg_is_true)
             }
+            DMIR::Jmp(lbl) => {
+                let mut block_builder = BlockBuilder {
+                    context: self.context,
+                    builder: &self.builder,
+                    val_type: &self.val_type,
+                    block_map: &mut self.block_map
+                };
+                let target = block_builder.emit_jump_target_block(&self.stack_loc, func, lbl);
+                self.builder.build_unconditional_branch(target.block);
+                self.block_ended = true;
+            }
             DMIR::EnterBlock(lbl) => {
 
                 let mut block_builder = BlockBuilder {
