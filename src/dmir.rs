@@ -222,7 +222,6 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::CallStatement(var, arg_count) => {
                         decode_call(&var, arg_count, &mut irs);
-                        irs.push(DMIR::Pop)
                     }
                     Instruction::Ret => {
                         irs.push(DMIR::Ret)
