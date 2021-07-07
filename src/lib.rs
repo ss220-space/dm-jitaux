@@ -6,6 +6,7 @@ mod compile;
 mod pads;
 mod dmir;
 mod codegen;
+mod ref_count;
 
 
 #[macro_use]
