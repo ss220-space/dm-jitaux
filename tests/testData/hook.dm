@@ -41,3 +41,6 @@
 
 /proc/toggle_dm_jitaux_call_counts()
     CRASH()
+
+/proc/get_datum_ref_count(arg)
+    CRASH()

@@ -82,3 +82,8 @@ fn test_aug_op() {
 fn test_is() {
     run_hook_and_assert_result(vec!("test_is.dm"));
 }
+
+#[test]
+fn test_ref_count() {
+    run_hook_and_assert_result(vec!("test_ref_count.dm"));
+}

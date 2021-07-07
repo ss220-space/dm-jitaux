@@ -37,18 +37,33 @@ pub enum DMIR {
     Dup, // Duplicate last value on stack
     DupX1, // Duplicate top value and insert one slot back ..., a, b -> ..., b, a, b
     Swap, // Swap values on stack top: ..., b, a -> ..., a, b
-    TestJZ(String),  // Perform Test and jump without changing test_flag
-    TestJNZ(String), // Perform Test and jump without changing test_flag
+    TestInternal,        // Perform Test and write internal_test_flag
+    JZInternal(String),  // Jump based on internal_test_flag
+    JNZInternal(String), // Jump based on internal_test_flag
     EnterBlock(String),
     Jmp(String),
     Deopt(u32, ProcId),
     CheckTypeDeopt(u32, ValueTag, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
     CallProcByName(StringId, u8, u32),
+    IncRefCount { target: RefOpDisposition, op: Box<DMIR> },
+    DecRefCount { target: RefOpDisposition, op: Box<DMIR> },
     End
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum RefOpDisposition {
+    DupPost(ValueLocation), // Read value before op, dup, execute op, execute ref count operation
+    Post(ValueLocation),    // Read value after op, execute ref count operation
+    Pre(ValueLocation)      // Read value before op, execute ref count operation, execute op
+}
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum ValueLocation {
+    Stack(u8),
+    Cache,
+    Local(u32)
+}
 
 fn get_string_id(str: &Vec<u8>) -> StringId {
     let mut id = auxtools::raw_types::strings::StringId(0);
@@ -240,12 +255,14 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::JmpAnd(lbl) => {
                         irs.push(DMIR::Dup);
-                        irs.push(DMIR::TestJZ(lbl.0));
+                        irs.push(DMIR::TestInternal);
+                        irs.push(DMIR::JZInternal(lbl.0));
                         irs.push(DMIR::Pop);
                     }
                     Instruction::JmpOr(lbl) => {
                         irs.push(DMIR::Dup);
-                        irs.push(DMIR::TestJNZ(lbl.0));
+                        irs.push(DMIR::TestInternal);
+                        irs.push(DMIR::JNZInternal(lbl.0));
                         irs.push(DMIR::Pop);
                     }
                     Instruction::PushInt(i32) => {
