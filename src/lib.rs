@@ -197,6 +197,7 @@ pub fn log_init() {
     }
 
     pads::deopt::initialize_deopt();
+    pads::debug::init();
 
     Value::from_string("dm-jitaux init success")
 }
@@ -252,4 +253,9 @@ pub fn toggle_dm_jitaux_call_counts() {
         auxtools::hooks::ENABLE_CALL_COUNTS = !auxtools::hooks::ENABLE_CALL_COUNTS;
         Ok(Value::from(auxtools::hooks::ENABLE_CALL_COUNTS))
     }
+}
+
+#[hook("/proc/get_datum_ref_count")]
+pub fn get_datum_ref_count(arg: Value) {
+    return Ok(Value::from(pads::debug::get_datum_ref_count(arg.clone())))
 }

@@ -11,7 +11,7 @@ use auxtools::raw_types::values::ValueTag;
 use inkwell::AddressSpace::Generic;
 use std::collections::hash_map::Entry;
 use auxtools::Proc;
-use crate::dmir::DMIR;
+use crate::dmir::{DMIR, RefOpDisposition, ValueLocation};
 use std::borrow::Borrow;
 use crate::pads;
 
@@ -25,8 +25,10 @@ pub struct CodeGen<'ctx, 'a> {
     cache: Option<StructValue<'ctx>>,
     val_type: StructType<'ctx>,
     test_res: Option<IntValue<'ctx>>,
+    internal_test_flag: Option<IntValue<'ctx>>,
     block_map: BlockMap<'ctx>,
     block_ended: bool,
+    parameter_count: u32
 }
 
 type BlockMap<'ctx> = HashMap<String, LabelBlockInfo<'ctx>>;
@@ -35,6 +37,9 @@ const INTRINSIC_CALL_PROC_BY_ID: &str = "<intrinsic>/call_proc_by_id";
 const INTRINSIC_CALL_PROC_BY_NAME: &str = "<intrinsic>/call_proc_by_name";
 const INTRINSIC_DEOPT: &str = "<intrinsic>/deopt";
 const INTRINSIC_SET_VARIABLE: &str = "<intrinsic>/set_variable";
+
+const INTRINSIC_INC_REF_COUNT: &str = "<intrinsic>/inc_ref_count";
+const INTRINSIC_DEC_REF_COUNT: &str = "<intrinsic>/dec_ref_count";
 
 
 struct LabelBlockInfo<'ctx> {
@@ -234,10 +239,32 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let call_proc_by_name_func = self.module.add_function(INTRINSIC_CALL_PROC_BY_NAME, call_proc_by_name_sig, None);
                 self.execution_engine.add_global_mapping(&call_proc_by_name_func, auxtools::raw_types::funcs::call_datum_proc_by_name as usize)
             }
+
+            {
+                let inc_ref_count_sig = self.context.i8_type().fn_type(&[
+                    self.val_type.into()
+                ], false);
+                let inc_ref_count_func = self.module.add_function(INTRINSIC_INC_REF_COUNT, inc_ref_count_sig, None);
+                self.execution_engine.add_global_mapping(&inc_ref_count_func, auxtools::raw_types::funcs::inc_ref_count as usize)
+            }
+
+            {
+                let dec_ref_count_sig = self.context.i8_type().fn_type(&[
+                    self.val_type.into()
+                ], false);
+                let dec_ref_count_func = self.module.add_function(INTRINSIC_DEC_REF_COUNT, dec_ref_count_sig, None);
+                self.execution_engine.add_global_mapping(&dec_ref_count_func, auxtools::raw_types::funcs::dec_ref_count as usize)
+            }
         }
     }
 
-    pub fn create<'a>(context: &'ctx Context, module: &'a Module<'ctx>, builder: Builder<'ctx>, execution_engine: &'a ExecutionEngine<'ctx>) -> CodeGen<'ctx, 'a> {
+    pub fn create<'a>(
+        context: &'ctx Context,
+        module: &'a Module<'ctx>,
+        builder: Builder<'ctx>,
+        execution_engine: &'a ExecutionEngine<'ctx>,
+        parameter_count: u32
+    ) -> CodeGen<'ctx, 'a> {
 
         // TODO: Cleanup
         let val_type =
@@ -260,8 +287,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
             cache: None,
             val_type,
             test_res: None,
+            internal_test_flag: None,
             block_map: HashMap::new(),
             block_ended: false,
+            parameter_count
         }
     }
 
@@ -437,6 +466,51 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let bool_f32 = self.builder.build_unsigned_int_to_float(bool, self.context.f32_type(), "to_f32");
         let res_i32 = self.builder.build_bitcast(bool_f32, self.context.i32_type(), "to_i32").into_int_value();
         return MetaValue::with_tag(ValueTag::Number, res_i32.into(), self);
+    }
+
+    fn emit_inc_ref_count(&self, value: StructValue<'ctx>) {
+        let func = self.module.get_function(INTRINSIC_INC_REF_COUNT).unwrap();
+        self.builder.build_call(func, &[value.into()], "call_inc_ref_count");
+    }
+
+    fn emit_dec_ref_count(&self, value: StructValue<'ctx>) {
+        let func = self.module.get_function(INTRINSIC_DEC_REF_COUNT).unwrap();
+        self.builder.build_call(func, &[value.into()], "call_dec_ref_count");
+    }
+
+    fn emit_read_value_location(&self, location: &ValueLocation) -> StructValue<'ctx> {
+        match location {
+            ValueLocation::Stack(rel) => {
+                self.stack_loc[rel.clone() as usize]
+            }
+            ValueLocation::Cache => {
+                self.cache.unwrap()
+            }
+            ValueLocation::Local(idx) => {
+                let pointer = self.locals.get(idx).unwrap();
+                self.builder.build_load(pointer.clone(), "load_local").into_struct_value()
+            }
+        }
+    }
+
+    fn emit_load_argument(&self, func: FunctionValue<'ctx>, idx: u32) -> StructValue<'ctx> {
+        let args_pointer = func.get_nth_param(3).unwrap().into_pointer_value();
+        let ptr_int = self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(Generic));
+        let args_pointer_int = self.builder.build_ptr_to_int(args_pointer, ptr_int, "args_ptr_to_int");
+        let size_of = self.val_type.size_of().unwrap();
+        let offset_int = size_of.const_mul(size_of.get_type().const_int(idx.clone() as u64, false));
+        let result_ptr_int = self.builder.build_int_add(args_pointer_int, self.builder.build_int_cast(offset_int, ptr_int, "conv"), "add_offset");
+        let arg_ptr = self.builder.build_int_to_ptr(result_ptr_int, self.val_type.ptr_type(Generic), "final_ptr");
+        let arg_value = self.builder.build_load(arg_ptr, "load_arg").into_struct_value();
+        return arg_value
+    }
+
+    fn emit_prologue(&self, func: FunctionValue<'ctx>) {
+        let parameter_count = self.parameter_count;
+        for param in 0..parameter_count {
+            let arg = self.emit_load_argument(func, param);
+            self.emit_dec_ref_count(arg);
+        }
     }
 
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
@@ -655,6 +729,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let out = func.get_nth_param(0).unwrap().into_pointer_value();
                 self.builder.build_store(out, value);
                 self.block_ended = true;
+                self.emit_prologue(func);
                 self.builder.build_return(None);
             }
             // Set indexed local to stack top
@@ -671,15 +746,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(value);
             }
             DMIR::GetArg(idx) => {
-                let args_pointer = func.get_nth_param(3).unwrap().into_pointer_value();
-                let ptr_int = self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(Generic));
-                let args_pointer_int = self.builder.build_ptr_to_int(args_pointer, ptr_int, "args_ptr_to_int");
-                let size_of = self.val_type.size_of().unwrap();
-                let offset_int = size_of.const_mul(size_of.get_type().const_int(idx.clone() as u64, false));
-                let result_ptr_int = self.builder.build_int_add(args_pointer_int, self.builder.build_int_cast(offset_int, ptr_int, "conv"), "add_offset");
-                let arg_ptr = self.builder.build_int_to_ptr(result_ptr_int, self.val_type.ptr_type(Generic), "final_ptr");
-                let arg_value = self.builder.build_load(arg_ptr, "load_arg").into_struct_value();
-                self.stack().push(arg_value)
+                let arg = self.emit_load_argument(func, idx.clone());
+                self.stack().push(arg);
             }
             DMIR::IsNull => {
                 let value = self.stack().pop();
@@ -769,20 +837,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(b);
                 self.stack().push(a);
             }
-            DMIR::TestJZ(lbl) => {
+            DMIR::TestInternal => {
                 let arg_value = self.stack().pop();
                 let arg = self.emit_load_meta_value(arg_value);
 
-                let arg_is_true = self.emit_check_is_true(arg);
-                let if_arg_false = self.builder.build_not(arg_is_true, "jz");
+                self.internal_test_flag = Some(self.emit_check_is_true(arg));
+            }
+            DMIR::JZInternal(lbl) => {
+                let if_arg_false = self.builder.build_not(self.internal_test_flag.unwrap(), "jz");
                 self.emit_conditional_jump(func, lbl, if_arg_false)
             }
-            DMIR::TestJNZ(lbl) => {
-                let arg_value = self.stack().pop();
-                let arg = self.emit_load_meta_value(arg_value);
-
-                let arg_is_true = self.emit_check_is_true(arg);
-                self.emit_conditional_jump(func, lbl, arg_is_true)
+            DMIR::JNZInternal(lbl) => {
+                self.emit_conditional_jump(func, lbl, self.internal_test_flag.unwrap())
             }
             DMIR::Jmp(lbl) => {
                 let mut block_builder = BlockBuilder {
@@ -823,6 +889,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::End => {
                 if !self.block_ended {
+                    self.emit_prologue(func);
                     self.builder.build_return(None);
                 }
             }
@@ -892,6 +959,44 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_unconditional_branch(next_block);
 
                 self.builder.position_at_end(next_block);
+            }
+            DMIR::IncRefCount { target, op } => {
+                match target {
+                    RefOpDisposition::DupPost(location) => {
+                        let value = self.emit_read_value_location(location);
+                        self.emit(op, func);
+                        self.emit_inc_ref_count(value);
+                    }
+                    RefOpDisposition::Post(location) => {
+                        self.emit(op, func);
+                        let value = self.emit_read_value_location(location);
+                        self.emit_inc_ref_count(value);
+                    }
+                    RefOpDisposition::Pre(location) => {
+                        let value = self.emit_read_value_location(location);
+                        self.emit_inc_ref_count(value);
+                        self.emit(op, func);
+                    }
+                }
+            }
+            DMIR::DecRefCount { target, op } => {
+                match target {
+                    RefOpDisposition::DupPost(location) => {
+                        let value = self.emit_read_value_location(location);
+                        self.emit(op, func);
+                        self.emit_dec_ref_count(value);
+                    }
+                    RefOpDisposition::Post(location) => {
+                        self.emit(op, func);
+                        let value = self.emit_read_value_location(location);
+                        self.emit_dec_ref_count(value);
+                    }
+                    RefOpDisposition::Pre(location) => {
+                        let value = self.emit_read_value_location(location);
+                        self.emit_dec_ref_count(value);
+                        self.emit(op, func);
+                    }
+                }
             }
             _ => {}
         }
