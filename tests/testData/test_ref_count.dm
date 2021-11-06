@@ -48,6 +48,7 @@
 
 /proc/store_restore_datum(var/datum/base/arg)
     arg.dt_next = arg
+    var/q = arg.dt_next
     arg.dt_next = 1
     return arg
 

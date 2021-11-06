@@ -278,7 +278,7 @@ impl<'t> Analyzer<'t> {
             }
             DMIR::GetCacheField(_) => {
                 op_effect!(
-                    @move_in @stack
+                    @produce @stack
                 );
             }
             DMIR::SetCacheField(_) => {
@@ -501,10 +501,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
     for drain in analyzer.drains.iter() {
         let mut sources = HashSet::new();
         match drain {
-            ConsumeDrain(_, value, _) => {
-                rvalue_dfs(value, &mut sources)
-            },
-            MoveOutDrain(_, value) => {
+            ConsumeDrain(_, value, _) | MoveOutDrain(_, value) => {
                 rvalue_dfs(value, &mut sources)
             }
         }
@@ -524,6 +521,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
                 decision_by_drain.insert(drain, Decision::Keep);
             }
             _ => {
+                pending.push(*drain);
                 for source in sources {
                     match source {
                         RValue::MovedInSource(_) => {
@@ -533,8 +531,6 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
                         _ => {}
                     }
                 }
-
-                pending.push(*drain);
             }
         }
     }
@@ -543,7 +539,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
     let mut has_changes = false;
     loop {
         pending = pending.iter().filter_map(|drain| {
-            let mut decision = Decision::Undecided;
+            let mut decision = decision_by_drain.get(drain).unwrap_or(&Decision::Undecided).clone();
             for source in sources_by_drain.get(drain).unwrap() {
                 match decision_by_source.get(source).unwrap_or(&Decision::Undecided) {
                     Decision::Keep => {
@@ -591,7 +587,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
         };
 
         let decision = decision_by_drain.get(drain);
-        let annotation = format!("dec: {:?} (from: {})", decision.unwrap(), source);
+        let annotation = format!("dec: {:?} (from: {})", decision.unwrap_or(&Decision::Undecided), source);
         annotations.entry(pos.clone())
             .and_modify(|entry| entry.push(annotation.clone()) )
             .or_insert_with(|| vec![annotation] );
@@ -606,7 +602,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
         };
 
         let decision = decision_by_source.get(value);
-        let annotation = format!("inc: {:?}", decision.unwrap());
+        let annotation = format!("inc: {:?}", decision.unwrap_or(&Decision::Undecided));
         annotations.entry(pos.clone())
             .and_modify(|entry| entry.push(annotation.clone()) )
             .or_insert_with(|| vec![annotation] );
