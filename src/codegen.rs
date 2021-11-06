@@ -961,6 +961,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.position_at_end(next_block);
             }
             DMIR::IncRefCount { target, op } => {
+                if self.block_ended {
+                    return;
+                }
                 match target {
                     RefOpDisposition::DupPost(location) => {
                         let value = self.emit_read_value_location(location);
@@ -980,6 +983,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 }
             }
             DMIR::DecRefCount { target, op } => {
+                if self.block_ended {
+                    return;
+                }
                 match target {
                     RefOpDisposition::DupPost(location) => {
                         let value = self.emit_read_value_location(location);
