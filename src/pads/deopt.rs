@@ -6,7 +6,11 @@ use auxtools::raw_types::strings::StringId;
 use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId};
 use auxtools::sigscan;
 
+#[cfg(windows)]
 static mut DO_CALL: Option<extern "cdecl" fn(*mut ProcInstance) -> Value> = Option::None;
+
+#[cfg(unix)]
+static mut DO_CALL: Option<extern "C" fn(*mut ProcInstance) -> Value> = Option::None;
 
 
 #[no_mangle]
@@ -177,7 +181,11 @@ pub fn initialize_deopt() {
         }
 
         if cfg!(unix) {
-            panic!("TODO")
+            let res = scanner.find(signature!("55 89 e5 57 56 53 81 ec cc 07 00 00"));
+
+            if let Some(ptr) = res {
+                do_call_byond = ptr as *const std::ffi::c_void;
+            }
         }
 
         if do_call_byond.is_null() {
