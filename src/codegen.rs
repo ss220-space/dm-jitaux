@@ -13,6 +13,7 @@ use std::collections::hash_map::Entry;
 use auxtools::Proc;
 use crate::dmir::{DMIR, RefOpDisposition, ValueLocation};
 use std::borrow::Borrow;
+use inkwell::attributes::{Attribute, AttributeLoc};
 use crate::pads;
 
 pub struct CodeGen<'ctx, 'a> {
@@ -37,6 +38,7 @@ const INTRINSIC_CALL_PROC_BY_ID: &str = "<intrinsic>/call_proc_by_id";
 const INTRINSIC_CALL_PROC_BY_NAME: &str = "<intrinsic>/call_proc_by_name";
 const INTRINSIC_DEOPT: &str = "<intrinsic>/deopt";
 const INTRINSIC_SET_VARIABLE: &str = "<intrinsic>/set_variable";
+const INTRINSIC_GET_VARIABLE: &str = "<intrinsic>/get_variable";
 
 const INTRINSIC_INC_REF_COUNT: &str = "<intrinsic>/inc_ref_count";
 const INTRINSIC_DEC_REF_COUNT: &str = "<intrinsic>/dec_ref_count";
@@ -140,10 +142,20 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
 
 impl<'ctx> CodeGen<'ctx, '_> {
     pub fn init_builtins(&self) {
-        if self.module.get_function("<intrinsic>/get_variable").is_none() {
-            let get_variable_signature = self.context.i8_type().fn_type(&[self.val_type.ptr_type(AddressSpace::Generic).into(), self.val_type.into(), self.context.i32_type().into()], false);
-            let get_variable_func = self.module.add_function("<intrinsic>/get_variable", get_variable_signature, Some(Linkage::External));
-            self.execution_engine.add_global_mapping(&get_variable_func, auxtools::raw_types::funcs::get_variable as usize);
+        if self.module.get_function(INTRINSIC_GET_VARIABLE).is_none() {
+            {
+                let get_variable_signature = self.context.i8_type().fn_type(
+                    &[
+                        self.val_type.ptr_type(AddressSpace::Generic).into(),
+                        self.val_type.into(),
+                        self.context.i32_type().into()
+                    ],
+                    false
+                );
+                let get_variable_func = self.module.add_function(INTRINSIC_GET_VARIABLE, get_variable_signature, Some(Linkage::External));
+                get_variable_func.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(41, 1));
+                self.execution_engine.add_global_mapping(&get_variable_func, auxtools::raw_types::funcs::get_variable as usize);
+            }
 
             {
                 let set_variable_sig = self.context.i8_type().fn_type(
@@ -532,7 +544,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             // Read field from cache e.g cache["oxygen"] where "oxygen" is interned string at name_id
             DMIR::GetCacheField(name_id) => {
-                let get_var_func = self.module.get_function("<intrinsic>/get_variable").unwrap();
+                let get_var_func = self.module.get_function(INTRINSIC_GET_VARIABLE).unwrap();
 
                 let receiver_value = self.cache.unwrap();
 
