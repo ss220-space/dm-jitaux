@@ -67,10 +67,11 @@ pub extern "C" fn handle_deopt(
         (*proc).callback_value = 0;
 
         (*proc).args_count = args_count;
+        (*proc).data_store.internal_arg_count = 0;
+
         (*proc).args = put_to_data_store(&mut (*proc).data_store, args, args_count);
         (*proc).time_to_resume = 0.;
 
-        (*proc).data_store.internal_arg_count = 10; // hack to avoid complex logic with putting data into
 
         (*context).proc_instance = proc;
         (*context).parent_context = std::ptr::null_mut();
@@ -158,13 +159,24 @@ unsafe fn put_to_data_store(
     count: u32
 ) -> *mut Value {
 
-    let data_size = std::mem::size_of::<Value>() * ((count + 1) as usize);
+    let data_size = std::mem::size_of::<Value>() * (count as usize);
 
-    (*data_store).external_arg_count += count;
-    let r = libc::malloc(data_size); // TODO: ensure no leaks!
-    libc::memcpy(r as *mut libc::c_void, data as *mut libc::c_void, data_size);
+    let dest: *mut Value;
 
-    return r as *mut Value;
+    if (*data_store).internal_arg_count + count < 0xb {
+        let arg_count = (*data_store).internal_arg_count;
+        (*data_store).external_arg_count = 0;
+        (*data_store).internal_arg_count += count;
+        dest = &mut (*data_store).data_store[arg_count as usize];
+    } else {
+        let pad_count = (count & 0xffff_fff8) + 8;
+        (*data_store).external_arg_count = pad_count;
+        dest = libc::malloc(std::mem::size_of::<Value>() * pad_count as usize) as *mut Value;
+    }
+
+    libc::memcpy(dest as *mut libc::c_void, data as *mut libc::c_void, data_size);
+
+    return dest;
 }
 
 pub fn initialize_deopt() {
