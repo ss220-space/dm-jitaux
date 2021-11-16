@@ -6,12 +6,29 @@ use auxtools::raw_types::strings::StringId;
 use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId};
 use auxtools::sigscan;
 
-#[cfg(windows)]
 static mut DO_CALL: Option<extern "cdecl" fn(*mut ProcInstance) -> Value> = Option::None;
 
-#[cfg(unix)]
-static mut DO_CALL: Option<extern "C" fn(*mut ProcInstance) -> Value> = Option::None;
 
+#[cfg(unix)]
+fn do_call_trampoline(proc_instance: *mut ProcInstance) -> Value {
+    unsafe {
+        let addr = DO_CALL.unwrap();
+        let mut result: Value = Value { tag: ValueTag::Null, data: ValueData { id: 0 } };
+        asm!(
+            "call {}",
+            in(reg) addr,
+            inout("eax") &mut result => _,
+            in("edx") proc_instance,
+            clobber_abi("cdecl")
+        );
+        result
+    }
+}
+
+#[cfg(windows)]
+fn do_call_trampoline(proc_instance: *mut ProcInstance) -> Value {
+    *out = DO_CALL.unwrap()(proc);
+}
 
 #[no_mangle]
 pub extern "C" fn handle_deopt(
@@ -147,7 +164,7 @@ pub extern "C" fn handle_deopt(
 
         log::debug!("Deopt called: context {:?}, proc {:?}", *context, *proc);
 
-        *out = DO_CALL.unwrap()(proc);
+        *out = do_call_trampoline(proc);
 
         log::debug!("Deopt return: {:?}", *out);
     };
@@ -206,8 +223,6 @@ pub fn initialize_deopt() {
     }
 
     unsafe {
-        DO_CALL = Option::Some(
-            std::mem::transmute(do_call_byond)
-        );
+        DO_CALL = Option::Some(std::mem::transmute(do_call_byond));
     };
 }
