@@ -1,8 +1,8 @@
 use crate::dmir::{DMIR, RefOpDisposition};
-use crate::ref_count::RValueDrain::{ConsumeDrain, MoveOutDrain};
+use crate::ref_count::RValueDrain::{ConsumeDrain, DeoptDrain, MoveOutDrain};
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Entry;
-use std::borrow::{Borrow};
+use std::borrow::{Borrow, BorrowMut};
 use crate::ref_count::RValue::Phi;
 use std::cell::{RefCell};
 use std::fmt::{Debug, Formatter};
@@ -47,6 +47,7 @@ impl<'t> Hash for RValue<'t> {
 enum RValueDrain<'t> {
     ConsumeDrain(usize, &'t RValue<'t>, DecRefOp), // decrement ref count on-demand, example: pop value off stack should dec ref count if value had incremented ref count before
     MoveOutDrain(usize, &'t RValue<'t>), // moves-out value to somewhere else, meaning value must have incremented ref count, example: return from proc
+    DeoptDrain(usize, &'t RValue<'t>, IncRefOp), // moves-out value to deopt, fixing ref counts inplace
 }
 
 struct BasicBlockNodes<'t> {
@@ -111,6 +112,7 @@ struct Analyzer<'t> {
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 enum IncRefOp {
     Post(ValueLocation),
+    Pre(ValueLocation)
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -381,8 +383,20 @@ impl<'t> Analyzer<'t> {
                 }
                 self.cache = block.cache_phi.clone();
             }
-            DMIR::Deopt(_, _) => {}
-            DMIR::CheckTypeDeopt(_, _, _) => {}
+            DMIR::Deopt(_, _) => {
+                if let Some(value) = self.cache {
+                    self.drains.push(DeoptDrain(pos, value, IncRefOp::Pre(ValueLocation::Cache)))
+                }
+                for (value, stack_value) in self.stack.iter().rev().enumerate() {
+                    self.drains.push(DeoptDrain(pos, stack_value, IncRefOp::Pre(ValueLocation::Stack(value as u8))))
+                }
+                for (value, local) in self.locals.iter() {
+                    self.drains.push(DeoptDrain(pos, local, IncRefOp::Pre(ValueLocation::Local(value.clone()))));
+                }
+            }
+            DMIR::CheckTypeDeopt(_, _, deopt) => {
+                self.analyze_instruction(pos, deopt.borrow())
+            }
             DMIR::CallProcById(_, _, arg_count) | DMIR::CallProcByName(_, _, arg_count) => {
                 op_effect!(@consume @stack);
                 for _ in 0..arg_count.clone() {
@@ -474,6 +488,23 @@ fn describe_source(src: &RValue, fmt: &mut Formatter<'_>, phi_stack: &mut HashSe
     }
 }
 
+fn create_inc_ref_count_ir(inner_instruction: DMIR, op: &IncRefOp) -> DMIR {
+    return match op {
+        IncRefOp::Post(loc) => {
+            DMIR::IncRefCount {
+                target: RefOpDisposition::Post(loc.clone()),
+                op: Box::new(inner_instruction)
+            }
+        }
+        IncRefOp::Pre(loc) => {
+            DMIR::IncRefCount {
+                target: RefOpDisposition::Pre(loc.clone()),
+                op: Box::new(inner_instruction)
+            }
+        }
+    }
+}
+
 pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
 
     let arena = Arena::new();
@@ -501,7 +532,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
     for drain in analyzer.drains.iter() {
         let mut sources = HashSet::new();
         match drain {
-            ConsumeDrain(_, value, _) | MoveOutDrain(_, value) => {
+            ConsumeDrain(_, value, _) | MoveOutDrain(_, value) | DeoptDrain(_, value, _) => {
                 rvalue_dfs(value, &mut sources)
             }
         }
@@ -583,7 +614,8 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
     for drain in &analyzer.drains {
         let (pos, source) = match drain {
             ConsumeDrain(pos, val, _) => (pos, format!("{:?}", val)),
-            MoveOutDrain(pos, val) => (pos, format!("{:?}", val))
+            MoveOutDrain(pos, val) => (pos, format!("{:?}", val)),
+            DeoptDrain(pos, val, _) => (pos, format!("{:?}", val))
         };
 
         let decision = decision_by_drain.get(drain);
@@ -651,15 +683,34 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
                     _ => {
                         let mut tmp = DMIR::End;
                         std::mem::swap(element, &mut tmp);
-                        match op {
-                            IncRefOp::Post(loc) => {
-                                *element = DMIR::IncRefCount {
-                                    target: RefOpDisposition::Post(loc.clone()),
-                                    op: Box::new(tmp)
-                                }
-                            }
-                        }
+                        *element = create_inc_ref_count_ir(tmp, op);
                     }
+                }
+            }
+            _ => {}
+        }
+    }
+
+
+    for drain in analyzer.drains.iter() {
+        if decision_by_drain[drain] != Decision::Remove {
+            continue
+        }
+        match drain {
+            DeoptDrain(pos, _, op) => {
+                let instruction = ir.get_mut(pos.clone()).unwrap();
+                match instruction {
+                    DMIR::CheckTypeDeopt(_, _, deopt) => {
+                        let mut tmp = DMIR::End;
+                        std::mem::swap(deopt.borrow_mut(), &mut tmp);
+                        *deopt.borrow_mut() = create_inc_ref_count_ir(tmp, op);
+                    }
+                    DMIR::IncRefCount { .. } | DMIR::Deopt(_, _) => {
+                        let mut tmp = DMIR::End;
+                        std::mem::swap(instruction, &mut tmp);
+                        *instruction = create_inc_ref_count_ir(tmp, op);
+                    }
+                    _ => panic!("not matching instruction type")
                 }
             }
             _ => {}

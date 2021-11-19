@@ -15,7 +15,8 @@
     compile_proc("/proc/access_datum")
     compile_proc("/proc/pass_datum")
     compile_proc("/proc/store_restore_datum")
-    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum
+    compile_proc("/proc/deopt_ret")
+    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret
 
     var/datum/base/dt_local = new
 
@@ -32,6 +33,9 @@
     RES(CHECK_LEAK(dt_local)) // RES: OK
 
     store_restore_datum(dt_local)
+    RES(CHECK_LEAK(dt_local)) // RES: OK
+
+    deopt_ret(dt_local)
     RES(CHECK_LEAK(dt_local)) // RES: OK
 
 /datum/base
@@ -54,3 +58,12 @@
 
 /proc/just_ret(arg)
     return arg
+
+/proc/deopt_ret(arg)
+    var/l = arg
+    dm_jitaux_deopt()
+    return l
+
+// Intrinsic to emulate deopt
+/proc/dm_jitaux_deopt()
+    DMJIT_NATIVE
