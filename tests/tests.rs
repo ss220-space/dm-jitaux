@@ -1,89 +1,30 @@
-use base::run_hook_test;
-use base::run_hook_and_assert_result;
-use base::test_result;
+use base::DMTest;
 mod base;
 
-#[test]
-fn test_total_moles_func() {
-    run_hook_and_assert_result(vec!("total_moles.dm"));
+macro_rules! test_dm {
+    ($file:ident) => {
+        #[test]
+        fn $file() {
+            DMTest::new(stringify!($file).to_string())
+                .run_hook_and_assert_result(vec!(concat!(stringify!($file), ".dm")));
+        }
+    };
 }
 
-#[test]
-fn test_jz() {
-    run_hook_and_assert_result(vec!("test_jz.dm"));
-}
-
-#[test]
-fn test_args() {
-    run_hook_and_assert_result(vec!("test_args.dm"));
-}
-
-#[test]
-fn test_push_val() {
-    run_hook_and_assert_result(vec!("push_val.dm"));
-}
-
-#[test]
-fn test_cmp() {
-    run_hook_and_assert_result(vec!("test_cmp.dm"));
-}
-
-#[test]
-fn test_deopt() {
-    run_hook_and_assert_result(vec!("test_deopt.dm"));
-}
-
-#[test]
-fn test_mul() {
-    run_hook_and_assert_result(vec!("test_mul.dm"));
-}
-
-#[test]
-fn test_add() {
-    run_hook_and_assert_result(vec!("test_add.dm"));
-}
-
-#[test]
-fn test_call_global() {
-    run_hook_and_assert_result(vec!("test_call_global.dm"));
-}
-
-#[test]
-fn test_call_static() {
-    run_hook_and_assert_result(vec!("test_call_static.dm"));
-}
-
-#[test]
-fn test_call_dynamic() {
-    run_hook_and_assert_result(vec!("test_call_dynamic.dm"));
-}
-
-#[test]
-fn test_abs() {
-    run_hook_and_assert_result(vec!("test_abs.dm"));
-}
-
-#[test]
-fn test_if_bool_ops() {
-    run_hook_and_assert_result(vec!("test_if_bool_ops.dm"));
-}
-
-#[test]
-fn test_sub() {
-    run_hook_and_assert_result(vec!("test_sub.dm"));
-}
-
-#[test]
-fn test_aug_op() {
-    run_hook_and_assert_result(vec!("test_aug_op.dm"));
-}
-
-#[test]
-fn test_is() {
-    run_hook_and_assert_result(vec!("test_is.dm"));
-}
-
-#[test]
-fn test_ref_count() {
-    run_hook_and_assert_result(vec!("test_ref_count.dm"));
-}
+test_dm!(test_total_moles);
+test_dm!(test_jz);
+test_dm!(test_args);
+test_dm!(push_val);
+test_dm!(test_cmp);
+test_dm!(test_deopt);
+test_dm!(test_mul);
+test_dm!(test_add);
+test_dm!(test_call_global);
+test_dm!(test_call_static);
+test_dm!(test_call_dynamic);
+test_dm!(test_abs);
+test_dm!(test_if_bool_ops);
+test_dm!(test_sub);
+test_dm!(test_aug_op);
+test_dm!(test_is);
+test_dm!(test_ref_count);
