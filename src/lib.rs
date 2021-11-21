@@ -188,9 +188,17 @@ pub fn dump_opcode_count() {
 
 #[hook("/proc/hook_log_init")]
 pub fn log_init() {
+    macro_rules! ver_string {
+        () => {
+            format!("{} built on {}", env!("VERGEN_GIT_SEMVER"), env!("VERGEN_BUILD_TIMESTAMP"))
+        };
+    }
+
+
+
     simple_logging::log_to_file("hook.log", LevelFilter::Debug).unwrap();
     log_panics::init();
-    log::info!("Log startup");
+    log::info!("Log startup, {}", ver_string!());
 
     for hook in inventory::iter::<CompileTimeHook> {
         log::info!("Hooked {}", hook.proc_path)
@@ -199,7 +207,7 @@ pub fn log_init() {
     pads::deopt::initialize_deopt();
     pads::debug::init();
 
-    Value::from_string("dm-jitaux init success")
+    Value::from_string(format!("dm-jitaux init success, {}", ver_string!()))
 }
 
 #[hook("/proc/dump_opcodes")]

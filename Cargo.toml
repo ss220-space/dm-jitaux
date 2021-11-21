@@ -3,6 +3,7 @@ name = "dm-jitaux"
 version = "0.1.0"
 authors = ["Simon Ogorodnik <simon.ogorodnik@gmail.com>"]
 edition = "2018"
+build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -19,6 +20,10 @@ inkwell = { git = "https://github.com/TheDan64/inkwell", default-features = fals
 llvm-sys = "120"
 libc = "0.2.97"
 typed-arena = "2.0.1"
+
+[build-dependencies]
+vergen = "5.1.17"
+anyhow = "1.0.47"
 
 [lib]
 crate-type = ["cdylib"]

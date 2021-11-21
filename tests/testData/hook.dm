@@ -2,7 +2,7 @@
 
 /proc/hook_main_init()
 	world.log << call(DMJIT_LIB, "auxtools_init")()
-	hook_log_init()
+	world.log << hook_log_init()
 // INIT
 /proc/hook_log_init()
 	DMJIT_NATIVE
