@@ -202,7 +202,8 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         build_float_bin_op_deopt(DMIR::FloatSub, &data, &proc, &mut irs);
                     }
                     Instruction::Mul => {
-                        irs.push(DMIR::FloatMul)
+                        irs.push(CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+                        irs.push(DMIR::FloatMul);
                     }
                     Instruction::Div => {
                         build_float_bin_op_deopt(DMIR::FloatDiv, &data, &proc, &mut irs);
