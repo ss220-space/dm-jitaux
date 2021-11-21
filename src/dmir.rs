@@ -46,7 +46,7 @@ pub enum DMIR {
     EnterBlock(String),
     Jmp(String),
     Deopt(u32, ProcId),
-    CheckTypeDeopt(u32, ValueTag, Box<DMIR>), // Doesn't consume stack value for now
+    CheckTypeDeopt(u32, ValueTagPredicate, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
     CallProcByName(StringId, u8, u32),
     IncRefCount { target: RefOpDisposition, op: Box<DMIR> },
@@ -55,6 +55,14 @@ pub enum DMIR {
     UnsetLocal(u32),
     UnsetCache,
     End
+}
+
+#[derive(Clone, Debug)]
+pub enum ValueTagPredicate {
+    Any,
+    None,
+    Tag(ValueTag),
+    Union(Vec<ValueTagPredicate>)
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
@@ -164,8 +172,8 @@ fn gen_push_null(out: &mut Vec<DMIR>) {
 }
 
 fn build_float_bin_op_deopt(action: DMIR, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
-    out.push(CheckTypeDeopt(0, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
-    out.push(CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+    out.push(CheckTypeDeopt(0, ValueTagPredicate::Tag(ValueTag::Number), Box::new(DMIR::Deopt(data.offset, proc.id))));
+    out.push(CheckTypeDeopt(1, ValueTagPredicate::Tag(ValueTag::Number), Box::new(DMIR::Deopt(data.offset, proc.id))));
     out.push(action);
 }
 
@@ -176,6 +184,10 @@ fn decode_float_aug_instruction(var: &Variable, action: DMIR, data: &DebugData, 
 }
 
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
+    macro_rules! value_tag_pred {
+        ($tag:expr) => ({ ValueTagPredicate::Tag($tag) });
+        (@union $($tag:expr),+) => ({ ValueTagPredicate::Union(vec![$(value_tag_pred!($tag)),+]) });
+    }
 
     // output for intermediate operations sequence
     let mut irs = vec![];
@@ -202,10 +214,20 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         build_float_bin_op_deopt(DMIR::FloatAdd, &data, &proc, &mut irs);
                     }
                     Instruction::Sub => {
-                        build_float_bin_op_deopt(DMIR::FloatSub, &data, &proc, &mut irs);
+                        irs.push(CheckTypeDeopt(0, ValueTagPredicate::Tag(ValueTag::Number), Box::new(DMIR::Deopt(data.offset, proc.id))));
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(@union ValueTag::Number, ValueTag::Null),
+                            Box::new(DMIR::Deopt(data.offset, proc.id))
+                        ));
+                        irs.push(DMIR::FloatSub);
                     }
                     Instruction::Mul => {
-                        irs.push(CheckTypeDeopt(1, ValueTag::Number, Box::new(DMIR::Deopt(data.offset, proc.id))));
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(ValueTag::Number),
+                            Box::new(DMIR::Deopt(data.offset, proc.id))
+                        ));
                         irs.push(DMIR::FloatMul);
                     }
                     Instruction::Div => {

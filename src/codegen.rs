@@ -11,7 +11,7 @@ use auxtools::raw_types::values::ValueTag;
 use inkwell::AddressSpace::Generic;
 use std::collections::hash_map::Entry;
 use auxtools::Proc;
-use crate::dmir::{DMIR, RefOpDisposition, ValueLocation};
+use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use std::borrow::Borrow;
 use inkwell::attributes::{Attribute, AttributeLoc};
 use crate::pads;
@@ -565,6 +565,26 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
+    fn emit_tag_predicate_comparison(&self, actual_tag: IntValue<'ctx>, predicate: &ValueTagPredicate) -> IntValue<'ctx> {
+        match predicate {
+            ValueTagPredicate::Any => self.context.bool_type().const_int(1, false),
+            ValueTagPredicate::None => self.context.bool_type().const_int(0, false),
+            ValueTagPredicate::Tag(tag) => self.builder.build_int_compare(IntPredicate::EQ, actual_tag, self.const_tag(tag.clone()), "check_tag"),
+            ValueTagPredicate::Union(tags) => {
+                let mut last_op = self.context.bool_type().const_int(1, false);
+                for pred in tags.iter() {
+                    last_op = self.builder.build_or(
+                        last_op,
+                        self.emit_tag_predicate_comparison(actual_tag, pred),
+                        "or"
+                    );
+                }
+                last_op
+            }
+        }
+
+    }
+
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
 
         macro_rules! decl_intrinsic {
@@ -644,7 +664,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::FloatSub => {
                 self.emit_bin_op(|first, second, code_gen| {
                     let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
-                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
+                    let second_f32 = code_gen.emit_to_number_or_zero(func, second).data.into_float_value();
 
                     let result_value = code_gen.builder.build_float_sub(second_f32, first_f32, "sub");
                     let result_i32 = code_gen.builder.build_bitcast(result_value, code_gen.context.i32_type(), "result_i32").into_int_value();
@@ -1045,7 +1065,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let post_deopt_block = self.context.append_basic_block(func, "post_deopt");
                 self.builder.position_at_end(post_deopt_block);
             }
-            DMIR::CheckTypeDeopt(stack_pos, tag, deopt) => {
+            DMIR::CheckTypeDeopt(stack_pos, predicate, deopt) => {
                 let stack_value = self.stack_loc[self.stack_loc.len() - 1 - (stack_pos.clone() as usize)];
                 let actual_tag = self.emit_load_meta_value(stack_value).tag;
 
@@ -1054,7 +1074,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
 
                 self.builder.build_conditional_branch(
-                    self.builder.build_int_compare(IntPredicate::EQ, actual_tag, self.const_tag(tag.clone()), "check_tag"),
+                    self.emit_tag_predicate_comparison(actual_tag, predicate),
                     next_block,
                     deopt_block,
                 );
