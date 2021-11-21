@@ -530,6 +530,23 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
+
+        macro_rules! decl_intrinsic {
+            ($code_gen:ident $name:literal ($($arg:ident),+) -> $result:ident) => ({
+                let function =
+                    if let Some(func) = $code_gen.module.get_function($name) {
+                        func
+                    } else {
+                        let t = $code_gen.context.$result().fn_type(&[$($code_gen.context.$arg().into()),+], false);
+                        $code_gen.module.add_function($name, t, None)
+                    };
+                function
+            });
+            ($name:literal ($($arg:ident),+) -> $result:ident) => (decl_intrinsic!(self $name ($($arg),+) -> $result))
+        }
+
+
+
         match ir {
 
             // Load src onto stack
@@ -635,22 +652,37 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let arg_value = self.stack().pop();
                 let arg = self.emit_load_meta_value(arg_value);
                 let arg_num = self.emit_to_number_or_zero(func, arg);
-                let fabs_type = self.context.f32_type().fn_type(&[self.context.f32_type().into()], false);
 
-                let fabs_name = "llvm.fabs.f32";
+                let fabs = decl_intrinsic!("llvm.fabs.f32" (f32_type) -> f32_type);
 
-                let fabs =
-                    if let Some(func) = self.module.get_function(fabs_name) {
-                        func
-                    } else {
-                        self.module.add_function(fabs_name, fabs_type, None)
-                    };
                 let result = self.builder.build_call(fabs, &[arg_num.data.into_float_value().into()], "abs").try_as_basic_value().left().unwrap().into_float_value();
 
                 let result_i32 = self.builder.build_bitcast(result, self.context.i32_type(), "cast_result").into_int_value();
                 let meta_result = MetaValue::with_tag(ValueTag::Number, result_i32.into(), self);
                 let result_value = self.emit_store_meta_value(meta_result);
                 self.stack().push(result_value);
+            }
+            DMIR::RoundN => {
+                self.emit_bin_op(|first, second, code_gen| {
+                    let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
+                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
+
+                    // first_f32: round to
+                    // second_f32: value to round
+                    let divided = code_gen.builder.build_float_div(second_f32, first_f32, "div");
+                    let divided_f64 =
+                        code_gen.builder.build_float_ext(divided, code_gen.context.f64_type(), "extend_to_double");
+
+                    let value_to_floor = code_gen.builder.build_float_add(divided_f64, code_gen.context.f64_type().const_float(0.5), "add_const");
+
+                    let floor = decl_intrinsic!(code_gen "llvm.floor.f64" (f64_type) -> f64_type);
+                    let discrete_counts = code_gen.builder.build_call(floor, &[value_to_floor.into()], "call_floor").try_as_basic_value().left().unwrap().into_float_value();
+                    let discrete_counts_f32 = code_gen.builder.build_float_trunc(discrete_counts, code_gen.context.f32_type(), "trunc_to_float");
+                    let result = code_gen.builder.build_float_mul(discrete_counts_f32, first_f32, "mul");
+                    let result_i32 = code_gen.builder.build_bitcast(result, code_gen.context.i32_type(), "cast_result").into_int_value();
+
+                    MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
+                })
             }
             DMIR::CallProcById(proc_id, proc_call_type, arg_count) => {
                 let src = self.stack().pop();

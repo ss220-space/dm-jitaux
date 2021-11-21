@@ -26,6 +26,7 @@ pub enum DMIR {
     FloatDiv,
     FloatCmp(inkwell::FloatPredicate),
     FloatAbs,
+    RoundN,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
     PushTestFlag, // Push test flag value as Number
@@ -205,6 +206,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Div => {
                         build_float_bin_op_deopt(DMIR::FloatDiv, &data, &proc, &mut irs);
+                    }
+                    Instruction::RoundN => {
+                        irs.push(DMIR::RoundN);
                     }
                     Instruction::Tg => {
                         decode_cmp(FloatPredicate::UGT, &data, &proc, &mut irs);

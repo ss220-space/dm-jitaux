@@ -298,7 +298,7 @@ impl<'t> Analyzer<'t> {
                     @produce @stack
                 );
             }
-            DMIR::FloatAdd | DMIR::FloatSub | DMIR::FloatMul | DMIR::FloatDiv => {
+            DMIR::FloatAdd | DMIR::FloatSub | DMIR::FloatMul | DMIR::FloatDiv | DMIR::RoundN => {
                 op_effect!(
                     @consume @stack,
                     @consume @stack,
