@@ -584,7 +584,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
 
         match ir {
-
+            DMIR::Nop => {}
             // Load src onto stack
             DMIR::GetSrc => {
                 // self.dbg("GetSrc");

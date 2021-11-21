@@ -258,6 +258,7 @@ impl<'t> Analyzer<'t> {
         }
 
         match ir {
+            DMIR::Nop => {}
             DMIR::GetLocal(idx) => {
                 op_effect!(
                     @produce @stack
