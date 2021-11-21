@@ -104,6 +104,7 @@ fn decode_get_var(vr: &Variable, out: &mut Vec<DMIR>) {
         }
         Variable::Local(idx) => out.push(DMIR::GetLocal(idx.clone())),
         Variable::Arg(idx) => out.push(DMIR::GetArg(idx.clone())),
+        Variable::Null => out.push(DMIR::PushVal(ValueOpRaw { tag: 0x0, data: 0 })), // TODO: make special instruction to allow no ref-counting over that Null value
         _ => panic!("Not supported")
     }
 }
