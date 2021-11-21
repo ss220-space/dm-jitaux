@@ -15,6 +15,7 @@ pub enum DMIR {
     SetLocal(u32),
     GetSrc,
     GetArg(u32),
+    SetArg(u32),
     SetCache,
     GetCacheField(u32),
     SetCacheField(u32),
@@ -121,6 +122,7 @@ fn decode_set_var(vr: &Variable, out: &mut Vec<DMIR>) {
         Variable::Field(str) => {
             out.push(DMIR::SetCacheField(get_string_id(&(str.0)).0))
         }
+        Variable::Arg(idx) => out.push(DMIR::SetArg(idx.clone())),
         _ => panic!("decode_set_var: Not supported {:?}", vr)
     }
 }

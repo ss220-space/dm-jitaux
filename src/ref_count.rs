@@ -272,6 +272,11 @@ impl<'t> Analyzer<'t> {
                     @produce @stack
                 );
             }
+            DMIR::SetArg(_) => {
+                op_effect!(
+                    @move_out @stack
+                )
+            }
             DMIR::SetCache => {
                 let prev = self.cache.replace(self.stack.pop().unwrap());
                 if let Some(prev) = prev {

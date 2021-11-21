@@ -506,15 +506,19 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     fn emit_load_argument(&self, func: FunctionValue<'ctx>, idx: u32) -> StructValue<'ctx> {
+        let arg_ptr = self.emit_load_argument_pointer(func, idx);
+        let arg_value = self.builder.build_load(arg_ptr, "load_arg").into_struct_value();
+        return arg_value
+    }
+
+    fn emit_load_argument_pointer(&self, func: FunctionValue<'ctx>, idx: u32) -> PointerValue<'ctx> {
         let args_pointer = func.get_nth_param(3).unwrap().into_pointer_value();
         let ptr_int = self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(Generic));
         let args_pointer_int = self.builder.build_ptr_to_int(args_pointer, ptr_int, "args_ptr_to_int");
         let size_of = self.val_type.size_of().unwrap();
         let offset_int = size_of.const_mul(size_of.get_type().const_int(idx.clone() as u64, false));
         let result_ptr_int = self.builder.build_int_add(args_pointer_int, self.builder.build_int_cast(offset_int, ptr_int, "conv"), "add_offset");
-        let arg_ptr = self.builder.build_int_to_ptr(result_ptr_int, self.val_type.ptr_type(Generic), "final_ptr");
-        let arg_value = self.builder.build_load(arg_ptr, "load_arg").into_struct_value();
-        return arg_value
+        self.builder.build_int_to_ptr(result_ptr_int, self.val_type.ptr_type(Generic), "final_ptr")
     }
 
     fn emit_prologue(&self, func: FunctionValue<'ctx>) {
@@ -760,6 +764,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::GetArg(idx) => {
                 let arg = self.emit_load_argument(func, idx.clone());
                 self.stack().push(arg);
+            }
+            DMIR::SetArg(idx) => {
+                let new_value = self.stack().pop();
+                let arg_ptr = self.emit_load_argument_pointer(func, idx.clone());
+                self.builder.build_store(arg_ptr, new_value);
             }
             DMIR::IsNull => {
                 let value = self.stack().pop();
