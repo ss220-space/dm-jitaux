@@ -9,6 +9,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use typed_arena::Arena;
 use crate::dmir::ValueLocation;
+use crate::dmir_annotate::Annotator;
 
 /// Denotes different types of value sources
 #[derive(Eq)]
@@ -614,7 +615,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
 
 
     // build annotations
-    let mut annotations: HashMap<_, Vec<String>> = HashMap::new();
+    let mut annotations = Annotator::new();
 
     for drain in &analyzer.drains {
         let (pos, source) = match drain {
@@ -625,9 +626,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
 
         let decision = decision_by_drain.get(drain);
         let annotation = format!("dec: {:?} (from: {})", decision.unwrap_or(&Decision::Undecided), source);
-        annotations.entry(pos.clone())
-            .and_modify(|entry| entry.push(annotation.clone()) )
-            .or_insert_with(|| vec![annotation] );
+        annotations.add(pos.clone(), annotation);
     }
 
     for value in &analyzer.values {
@@ -635,14 +634,12 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
             RValue::ProduceSource(pos, _) => pos,
             RValue::MovedInSource(pos) => pos,
             RValue::UncountedSource(pos) => pos,
-            Phi(_, _) => continue,
+            Phi(_, _) => continue
         };
 
         let decision = decision_by_source.get(value);
         let annotation = format!("inc: {:?}", decision.unwrap_or(&Decision::Undecided));
-        annotations.entry(pos.clone())
-            .and_modify(|entry| entry.push(annotation.clone()) )
-            .or_insert_with(|| vec![annotation] );
+        annotations.add(pos.clone(), annotation);
     }
 
     for drain in analyzer.drains.iter() {
@@ -723,14 +720,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
     }
 
     log::debug!("Generated:");
-
-    for (pos, dmir) in ir.iter().enumerate() {
-        if let Some(annotations) = annotations.get(&pos) {
-            log::debug!("{}: {:?} // {}", pos, dmir, annotations.join(", "))
-        } else {
-            log::debug!("{}: {:?}", pos, dmir)
-        }
-    }
+    annotations.dump_annotated(ir);
 }
 
 

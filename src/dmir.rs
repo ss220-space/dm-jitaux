@@ -51,6 +51,9 @@ pub enum DMIR {
     CallProcByName(StringId, u8, u32),
     IncRefCount { target: RefOpDisposition, op: Box<DMIR> },
     DecRefCount { target: RefOpDisposition, op: Box<DMIR> },
+    Nop,
+    UnsetLocal(u32),
+    UnsetCache,
     End
 }
 

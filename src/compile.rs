@@ -13,6 +13,7 @@ use std::marker::PhantomPinned;
 use std::pin::Pin;
 use crate::codegen::CodeGen;
 use inkwell::attributes::AttributeLoc;
+use crate::variable_termination_pass::variable_termination_pass;
 use crate::ref_count::generate_ref_count_operations;
 
 #[hook("/proc/compile_proc")]
@@ -160,10 +161,10 @@ fn compile_proc<'ctx>(
     let mut irs = dmir::decode_byond_bytecode(nodes, proc.clone()).unwrap();
 
     log::debug!("DMIR created");
-
+    variable_termination_pass(&mut irs);
+    log::debug!("variable_termination_pass done");
     generate_ref_count_operations(&mut irs);
-
-    log::debug!("Ref count ops inserted");
+    log::debug!("ref_count_pass done");
     // Prepare LLVM internals for code-generation
     let mut code_gen = CodeGen::create(context, &module, context.create_builder(), execution_engine, proc.parameter_names().len() as u32);
     code_gen.init_builtins();

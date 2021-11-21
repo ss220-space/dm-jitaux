@@ -7,6 +7,8 @@ mod pads;
 mod dmir;
 mod codegen;
 mod ref_count;
+mod variable_termination_pass;
+mod dmir_annotate;
 
 
 #[macro_use]

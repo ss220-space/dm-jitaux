@@ -1068,6 +1068,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     }
                 }
             }
+            DMIR::UnsetCache => {
+                self.cache = Option::None;
+            }
+            DMIR::UnsetLocal(idx) => {
+                self.locals.remove(idx);
+            }
             _ => {}
         }
     }
