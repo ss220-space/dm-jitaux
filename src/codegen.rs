@@ -955,6 +955,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     self.emit_prologue(func);
                     self.builder.build_return(None);
                 }
+                self.block_ended = true;
             }
             DMIR::Deopt(offset, proc_id) => {
                 let out_stack_type = self.val_type.array_type(self.stack_loc.len() as u32);
