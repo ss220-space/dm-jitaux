@@ -59,7 +59,9 @@ struct BasicBlockNodes<'t> {
 
 impl<'t> RValue<'t> {
     fn new_phi(phi_id: &mut u32, first_incoming: &'t RValue<'t>) -> RValue<'t> {
-        Phi(*phi_id, RefCell::new(vec![first_incoming]))
+        let id = *phi_id;
+        *phi_id += 1;
+        Phi(id, RefCell::new(vec![first_incoming]))
     }
 }
 
@@ -135,7 +137,7 @@ impl<'t> Analyzer<'t> {
     ) {
         match blocks.entry(lbl) {
             Entry::Occupied(mut entry) => {
-                let mut v = entry.get_mut();
+                let v = entry.get_mut();
                 for (i, value) in stack.iter().enumerate() {
                     match v.stack_phi.get_mut(i).unwrap() {
                         Phi(_, incoming) => {
@@ -144,12 +146,17 @@ impl<'t> Analyzer<'t> {
                         _ => {}
                     }
                 }
+
                 for (idx, value) in locals {
-                    match v.locals_phi.get_mut(idx).unwrap() {
-                        Phi(_, incoming) => {
-                            incoming.borrow_mut().push(value);
-                        }
-                        _ => {}
+                    if let Phi(_, incoming) = v.locals_phi.get_mut(idx).unwrap() {
+                        incoming.borrow_mut().push(value);
+                    }
+                }
+
+
+                if let Some(cache) = cache {
+                    if let Phi(_, incoming) = v.cache_phi.unwrap() {
+                        incoming.borrow_mut().push(cache);
                     }
                 }
             }
@@ -334,6 +341,7 @@ impl<'t> Analyzer<'t> {
             DMIR::Ret => {
                 unset_locals_and_cache!();
                 op_effect!(@move_out @stack);
+                self.block_ended = true;
             }
             DMIR::Test => {
                 op_effect!(@consume @stack);
@@ -380,14 +388,10 @@ impl<'t> Analyzer<'t> {
                 } else {
                     self.block_ended = false;
                 }
-                let block = self.blocks.get(lbl).unwrap();
-                self.stack.clear();
-                self.stack.append(&mut block.stack_phi.clone());
-                self.locals.clear();
-                for (idx, value) in block.locals_phi.clone() {
-                    self.locals.insert(idx.clone(), value);
-                }
-                self.cache = block.cache_phi.clone();
+                let block = self.blocks.get(lbl).unwrap_or_else(|| panic!("{}: Block not found for {}", pos, lbl));
+                self.stack = block.stack_phi.clone();
+                self.locals = block.locals_phi.clone();
+                self.cache = block.cache_phi;
             }
             DMIR::Deopt(_, _) => {
                 if let Some(value) = self.cache {
@@ -413,6 +417,7 @@ impl<'t> Analyzer<'t> {
             DMIR::End => {
                 assert!(self.stack.is_empty());
                 unset_locals_and_cache!();
+                self.block_ended = true;
             }
             DMIR::Not => {
                 op_effect!(
@@ -451,6 +456,19 @@ impl<'t> Analyzer<'t> {
                     lbl.to_string()
                 );
                 self.block_ended = true;
+            }
+            DMIR::UnsetLocal(idx) => {
+                if let Some(local) = self.locals.remove(idx) {
+                    self.drains.push(RValueDrain::ConsumeDrain(pos, local, DecRefOp::Pre(ValueLocation::Cache)))
+                } else {
+                    panic!("No local found for idx: {} at pos: {}", idx, pos);
+                }
+            }
+            DMIR::UnsetCache => {
+                if let Some(cache) = self.cache {
+                    self.drains.push(RValueDrain::ConsumeDrain(pos, cache, DecRefOp::Pre(ValueLocation::Cache)))
+                }
+                self.cache = Option::None;
             }
             DMIR::IncRefCount { .. } => panic!(),
             DMIR::DecRefCount { .. } => panic!()

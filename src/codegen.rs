@@ -22,7 +22,7 @@ pub struct CodeGen<'ctx, 'a> {
     builder: Builder<'ctx>,
     execution_engine: &'a ExecutionEngine<'ctx>,
     stack_loc: Vec<StructValue<'ctx>>,
-    locals: HashMap<u32, PointerValue<'ctx>>,
+    locals: HashMap<u32, StructValue<'ctx>>,
     cache: Option<StructValue<'ctx>>,
     val_type: StructType<'ctx>,
     test_res: Option<IntValue<'ctx>>,
@@ -46,7 +46,9 @@ const INTRINSIC_DEC_REF_COUNT: &str = "<intrinsic>/dec_ref_count";
 
 struct LabelBlockInfo<'ctx> {
     block: BasicBlock<'ctx>,
-    phi: Vec<PhiValue<'ctx>>
+    phi: Vec<PhiValue<'ctx>>,
+    cache_phi: Option<PhiValue<'ctx>>,
+    locals_phi: HashMap<u32, PhiValue<'ctx>>
 }
 
 struct MetaValue<'ctx> {
@@ -100,41 +102,76 @@ struct BlockBuilder<'ctx, 'a> {
 }
 
 impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
-    fn emit_postponed_block(
-        &'a mut self, func: FunctionValue<'ctx>, lbl: &String, stack_size: usize
+
+    fn emit_jump_target_block(
+        &'a mut self,
+        stack_loc: &Vec<StructValue<'ctx>>,
+        locals: &HashMap<u32, StructValue<'ctx>>,
+        cache_data: &Option<StructValue<'ctx>>,
+        func: FunctionValue<'ctx>,
+        lbl: &String
     ) -> &'a LabelBlockInfo<'ctx> {
-        match self.block_map.entry(lbl.clone()) {
+        let current_block = self.builder.get_insert_block().unwrap();
+        let stack = stack_loc;
+
+        let val_type = self.val_type;
+        let builder = self.builder;
+
+        let label_block_info = match self.block_map.entry(lbl.clone()) {
+            Entry::Occupied(v) => {
+                v.into_mut()
+            }
             Entry::Vacant(v) => {
-                let current_block = self.builder.get_insert_block().unwrap();
+                let current_block = builder.get_insert_block().unwrap();
                 let new_block = self.context.append_basic_block(func, lbl);
 
-                self.builder.position_at_end(new_block);
+                builder.position_at_end(new_block);
                 let mut phi: Vec<PhiValue<'ctx>> = Vec::new();
-                for _ in 0..stack_size {
-                    phi.push(self.builder.build_phi(self.val_type.clone(), "stack_loc"));
+                for _ in 0..stack.len() {
+                    phi.push(builder.build_phi(val_type.clone(), "stack_loc"));
                 }
-                self.builder.position_at_end(current_block);
+
+                let mut locals_phi = HashMap::new();
+                for (idx, _) in locals {
+                    locals_phi.insert(idx.clone(), builder.build_phi(val_type.clone(), "local_phi"));
+                }
+
+                let cache_phi = if cache_data.is_some() {
+                    Option::Some(builder.build_phi(val_type.clone(), "cache_phi"))
+                } else {
+                    Option::None
+                };
+
+                builder.position_at_end(current_block);
+
+
 
                 let target_info =
                     LabelBlockInfo {
                         block: new_block,
-                        phi
+                        phi,
+                        locals_phi,
+                        cache_phi
                     };
                 v.insert(target_info)
             }
-            Entry::Occupied(v) => {
-                v.into_mut()
-            }
-        }
-    }
+        };
 
-    fn emit_jump_target_block(&'a mut self, stack_loc: &Vec<StructValue<'ctx>>, func: FunctionValue<'ctx>, lbl: &String) -> &'a LabelBlockInfo<'ctx> {
-        let current_block = self.builder.get_insert_block().unwrap();
-        let stack = stack_loc;
-        let label_block_info = self.emit_postponed_block(func, lbl, stack.len());
+
+        assert_eq!(stack.len(), label_block_info.phi.len(), "stack unaligned");
         for (idx, loc) in stack.iter().enumerate() {
             label_block_info.phi[idx].add_incoming(&[(loc, current_block)]);
         }
+
+        for (idx, local) in locals {
+            let local_phi = label_block_info.locals_phi[&idx];
+            local_phi.add_incoming(&[(local, current_block)]);
+        }
+
+        if let Some(cache) = cache_data {
+            label_block_info.cache_phi.unwrap().add_incoming(&[(cache, current_block)])
+        }
+
 
         label_block_info
     }
@@ -462,7 +499,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             val_type: &self.val_type,
             block_map: &mut self.block_map
         };
-        let target = block_builder.emit_jump_target_block(&self.stack_loc, func, lbl);
+        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, lbl);
         let target_block = target.block.clone();
 
         self.builder.build_conditional_branch(
@@ -499,8 +536,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.cache.unwrap()
             }
             ValueLocation::Local(idx) => {
-                let pointer = self.locals.get(idx).unwrap();
-                self.builder.build_load(pointer.clone(), "load_local").into_struct_value()
+                self.locals.get(idx).unwrap().clone()
             }
         }
     }
@@ -793,14 +829,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
             // Set indexed local to stack top
             DMIR::SetLocal(idx) => {
                 let value = self.stack().pop();
-                let local = self.builder.build_alloca(self.val_type, "local");
-                self.builder.build_store(local, value);
-                self.locals.insert(idx.clone(), local);
+                self.locals.insert(idx.clone(), value);
             }
             // Push indexed local value to stack
             DMIR::GetLocal(idx) => {
-                let ptr = self.locals.get(&idx).unwrap().clone();
-                let value = self.builder.build_load(ptr, "load_local").into_struct_value();
+                let value = self.locals.get(&idx).unwrap().clone();
                 self.stack().push(value);
             }
             DMIR::GetArg(idx) => {
@@ -920,7 +953,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     val_type: &self.val_type,
                     block_map: &mut self.block_map
                 };
-                let target = block_builder.emit_jump_target_block(&self.stack_loc, func, lbl);
+                let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, lbl);
                 self.builder.build_unconditional_branch(target.block);
                 self.block_ended = true;
             }
@@ -933,15 +966,24 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     block_map: &mut self.block_map
                 };
                 let target = if !self.block_ended {
-                    block_builder.emit_jump_target_block(&self.stack_loc, func, lbl)
+                    block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, lbl)
                 } else {
                     self.block_map.get(lbl).unwrap()
                 };
 
                 self.test_res = None;
                 self.stack_loc.clear();
+                self.locals.clear();
                 for phi in target.phi.iter() {
                     self.stack_loc.push(phi.as_basic_value().into_struct_value());
+                }
+
+                for (idx, phi) in target.locals_phi.iter() {
+                    self.locals.insert(idx.clone(), phi.as_basic_value().into_struct_value());
+                }
+
+                if let Some(cache) = target.cache_phi {
+                    self.cache = Option::Some(cache.as_basic_value().into_struct_value())
                 }
 
                 if !self.block_ended {
@@ -973,8 +1015,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let locals_out_ptr = self.builder.build_alloca(out_locals_type, "out_locals");
                 let mut locals_out_array = out_locals_type.const_zero();
                 for (pos, loc) in self.locals.iter() {
-                    let load_local = self.builder.build_load(loc.clone(), "load_value_local");
-                    locals_out_array = self.builder.build_insert_value(locals_out_array, load_local, pos.clone(), "store_value_from_local").unwrap().into_array_value();
+                    locals_out_array = self.builder.build_insert_value(locals_out_array, loc.clone(), pos.clone(), "store_value_from_local").unwrap().into_array_value();
                 }
                 self.builder.build_store(locals_out_ptr, locals_out_array);
 
