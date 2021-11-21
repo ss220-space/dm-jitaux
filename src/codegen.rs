@@ -609,6 +609,16 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
                 });
             }
+            DMIR::FloatDiv => {
+                self.emit_bin_op(|first, second, code_gen| {
+                    let first_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "first_f32").into_float_value();
+                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
+
+                    let result_value = code_gen.builder.build_float_div(second_f32, first_f32, "div");
+                    let result_i32 = code_gen.builder.build_bitcast(result_value, code_gen.context.i32_type(), "result_i32").into_int_value();
+                    MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
+                })
+            }
             DMIR::FloatCmp(predicate) => {
                 self.emit_bin_op(|first, second, code_gen| {
                     let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();

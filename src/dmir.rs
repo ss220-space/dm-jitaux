@@ -23,6 +23,7 @@ pub enum DMIR {
     FloatAdd,
     FloatSub,
     FloatMul,
+    FloatDiv,
     FloatCmp(inkwell::FloatPredicate),
     FloatAbs,
     PushInt(i32),
@@ -201,6 +202,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Mul => {
                         irs.push(DMIR::FloatMul)
+                    }
+                    Instruction::Div => {
+                        build_float_bin_op_deopt(DMIR::FloatDiv, &data, &proc, &mut irs);
                     }
                     Instruction::Tg => {
                         decode_cmp(FloatPredicate::UGT, &data, &proc, &mut irs);
