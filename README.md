@@ -1,8 +1,8 @@
 ![WIP](https://img.shields.io/badge/-WIP-yellow) 
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)
-# dm-jitaux
+# .dmJIT
 
-dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools), [dmasm](https://github.com/ss220-space/dmasm) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
+.dmJIT is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools), [dmasm](https://github.com/ss220-space/dmasm) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
 
 ## Implementation status
 #### Roadmap
@@ -11,7 +11,7 @@ dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.
 - Sleeping proc deoptimization
 - Calls ✔️
 - Virtual calls ✔️
-- Type probing deoptimization
+- Type probing deoptimization 
 - Heterogenous instruction optimization
 - JITed-to-JITed direct calls
 - Tiering
@@ -22,8 +22,8 @@ dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.
 #### Opcodes
 |OpCode|Status| 
 |------|------|
-|GetVar|SetCache, Field, Src, Local|
-|SetVar|SetCache, Field, Local|
+|GetVar|SetCache, Field, Src, Local, Arg|
+|SetVar|SetCache, Field, Local, Arg|
 |Add|Float|
 |Sub|Float|
 |Tg|Float|
@@ -51,6 +51,7 @@ dm-jitaux is a Rust-based JIT compiler using modified [auxtools](https://github.
 |Call|StaticProc, DynamicProc, No sleep deopt|
 |CallStatement|StaticProc, DynamicProc, No sleep deopt|
 |Abs|✔️|
+|RoundN|✔️|
 
 ## Dependencies
 *These instructions were taken directly from tgstation's [rust-g](https://github.com/tgstation/rust-g) documentation.*
