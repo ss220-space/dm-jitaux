@@ -978,18 +978,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.block_ended = true;
             }
             DMIR::EnterBlock(lbl) => {
-
-                let mut block_builder = BlockBuilder {
-                    context: self.context,
-                    builder: &self.builder,
-                    val_type: &self.val_type,
-                    block_map: &mut self.block_map
-                };
-                let target = if !self.block_ended {
-                    block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, lbl)
-                } else {
-                    self.block_map.get(lbl).unwrap()
-                };
+                assert!(self.block_ended, "no direct fallthrough allowed");
+                let target = self.block_map.get(lbl).unwrap();
 
                 self.test_res = None;
                 self.stack_loc.clear();

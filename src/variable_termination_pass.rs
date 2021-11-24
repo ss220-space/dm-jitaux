@@ -140,8 +140,6 @@ pub fn variable_termination_pass(ir: &mut Vec<DMIR>) {
 
     let mut ir_to_insert = Vec::new();
 
-    let mut fallthrough_jmp_created_for: HashSet<String> = HashSet::new();
-
     for (pos, values) in values_to_unset.iter() {
         if values.is_empty() {
             continue;
@@ -155,22 +153,7 @@ pub fn variable_termination_pass(ir: &mut Vec<DMIR>) {
                 let block_location = &analyzer.block_locations[&old_target_label];
                 *label = name;
 
-                if
-                    block_location.incoming_fallthrough &&
-                    values_to_unset.get(&block_location.position).unwrap_or(&Vec::new()).is_empty() &&
-                    fallthrough_jmp_created_for.insert(old_target_label.clone())
-                {
-                    ir_to_insert.insert(0, (block_location.position, vec![DMIR::Jmp(old_target_label.clone())]));
-                }
-
                 ir_to_insert.push((block_location.position, new_ir));
-            }
-            // If we got values to unset, it means that values should be unset on direct transition to given block
-            DMIR::EnterBlock(label) => {
-                let mut new_ir = Vec::new();
-                let name = generate_variable_termination_block(*pos - 1, label, values, &mut new_ir);
-                ir_to_insert.insert(0, (*pos, vec![DMIR::Jmp(name)]));
-                ir_to_insert.push((*pos, new_ir));
             }
             _ => panic!("Unexpected instruction: {:?}", instruction)
         }
@@ -288,8 +271,7 @@ struct BlockData<'t> {
 
 #[derive(Debug)]
 struct BlockLocation {
-    position: usize,
-    incoming_fallthrough: bool
+    position: usize
 }
 
 struct AnalyzerState<'t> {
@@ -375,12 +357,9 @@ impl <'t> AnalyzerState<'t> {
                     self.merge_presences(pos, label.clone())
                 }
                 DMIR::EnterBlock(label) => {
-                    if !block_ended {
-                        self.merge_presences(pos, label.clone());
-                    }
+                    assert!(block_ended, "fallthrough termination incorrect");
                     self.block_locations.insert(label.clone(), BlockLocation {
-                        position: pos,
-                        incoming_fallthrough: !block_ended
+                        position: pos
                     });
 
                     block_ended = false;

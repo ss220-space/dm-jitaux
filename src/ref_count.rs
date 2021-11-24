@@ -375,20 +375,9 @@ impl<'t> Analyzer<'t> {
             DMIR::JZInternal(_) => {}
             DMIR::JNZInternal(_) => {}
             DMIR::EnterBlock(lbl) => {
+                assert!(self.block_ended);
                 let lbl_str = lbl.to_string();
-                if !self.block_ended {
-                    Analyzer::merge_block(
-                        &self.stack,
-                        &self.cache,
-                        &self.locals,
-                        &self.values_arena,
-                        &mut self.phi_id,
-                        &mut self.blocks,
-                        lbl_str
-                    );
-                } else {
-                    self.block_ended = false;
-                }
+                self.block_ended = false;
                 let block = self.blocks.get(lbl).unwrap_or_else(|| panic!("{}: Block not found for {}", pos, lbl));
                 self.stack = block.stack_phi.clone();
                 self.locals = block.locals_phi.clone();

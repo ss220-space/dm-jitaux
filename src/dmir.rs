@@ -195,6 +195,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
     // will set to false if some unsupported operation found
     let mut supported = true;
 
+    // needed for generating fallthrough jumps on EnterBlock
+    let mut block_ended = false;
+
     // generate DMIR sequence for each instruction in dm-asm
     for nd in nodes {
         match nd {
@@ -276,10 +279,12 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         decode_call(&var, arg_count, &mut irs);
                     }
                     Instruction::Ret => {
-                        irs.push(DMIR::Ret)
+                        irs.push(DMIR::Ret);
+                        block_ended = true;
                     }
                     Instruction::End => {
-                        irs.push(DMIR::End)
+                        irs.push(DMIR::End);
+                        block_ended = true;
                     }
                     Instruction::Test => {
                         irs.push(DMIR::Test)
@@ -288,7 +293,8 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::JZ(lbl.0))
                     }
                     Instruction::Jmp(lbl) => {
-                        irs.push(DMIR::Jmp(lbl.0))
+                        irs.push(DMIR::Jmp(lbl.0));
+                        block_ended = true;
                     }
                     Instruction::JmpAnd(lbl) => {
                         irs.push(DMIR::Dup);
@@ -331,6 +337,10 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
             }
             dmasm::Node::Label(lbl) => {
                 //log::info!("{}:", lbl)
+                if !block_ended {
+                    irs.push(DMIR::Jmp(lbl.clone()));
+                }
+                block_ended = false;
                 irs.push(DMIR::EnterBlock(lbl))
             }
             _ => {}
