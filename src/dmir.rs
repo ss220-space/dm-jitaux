@@ -278,13 +278,16 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::FloatAbs)
                     }
                     Instruction::CallGlob(arg_count, callee) => {
-                        if callee.0 == "/dm_jitaux_deopt" {
-                            irs.push(DMIR::Deopt(data.offset, proc.id));
-                            gen_push_null(&mut irs);
-                        } else {
-                            gen_push_null(&mut irs);
-                            let id = Proc::find(callee.0).unwrap().id;
-                            irs.push(DMIR::CallProcById(id, 2, arg_count))
+                        match callee.0.as_ref() {
+                            "/dm_jitaux_deopt" => {
+                                irs.push(DMIR::Deopt(data.offset, proc.id));
+                                gen_push_null(&mut irs);
+                            }
+                            _ => {
+                                gen_push_null(&mut irs);
+                                let id = Proc::find(callee.0).unwrap().id;
+                                irs.push(DMIR::CallProcById(id, 2, arg_count))
+                            }
                         }
                     }
                     Instruction::Call(var, arg_count) => {
