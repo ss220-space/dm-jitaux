@@ -1152,7 +1152,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         self.context.i8_type().const_int(2, false).into(), //proc_flags: u8,
                         self.context.i32_type().const_int(offset.clone() as u64, false).into(), //offset: u32,
                         self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)).into(), //test_flag: bool,
-                        self.builder.build_bitcast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //stack: *const auxtools::raw_types::values::Value,
+                        self.builder.build_pointer_cast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //stack: *const auxtools::raw_types::values::Value,
                         self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(), //stack_size: u32,
                         self.cache.unwrap_or(self.val_type.const_zero()).into(), //cached_datum: auxtools::raw_types::values::Value,
                         func.get_nth_param(1).unwrap().into(), //src: auxtools::raw_types::values::Value,
