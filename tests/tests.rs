@@ -33,3 +33,4 @@ test_dm!(test_local_var);
 test_dm!(test_null_cmp);
 test_dm!(test_call_args);
 test_dm!(test_round);
+test_dm!(test_gas_mixture_share);
