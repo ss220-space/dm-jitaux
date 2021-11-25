@@ -1061,8 +1061,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::Swap => {
                 let a = self.stack().pop();
                 let b = self.stack().pop();
-                self.stack().push(b);
                 self.stack().push(a);
+                self.stack().push(b);
             }
             DMIR::TestInternal => {
                 let arg_value = self.stack().pop();
