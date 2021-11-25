@@ -438,6 +438,34 @@ impl<'ctx> CodeGen<'ctx, '_> {
         return MetaValue::with_tag(ValueTag::Number, out_f32.into(), self);
     }
 
+    fn emit_null_to_zero(&mut self, func: FunctionValue<'ctx>, value: MetaValue<'ctx>) -> MetaValue<'ctx> {
+        let tag_check = self.emit_tag_predicate_comparison(value.tag, &ValueTagPredicate::Tag(ValueTag::Null));
+
+        let iff_null_block = self.context.append_basic_block(func, "iff_null");
+        let next_block = self.context.append_basic_block(func, "next_block");
+        let prev_block = self.builder.get_insert_block().unwrap();
+
+        let original_value_packed = self.emit_store_meta_value(value);
+
+        self.builder.build_conditional_branch(
+            tag_check,
+            iff_null_block,
+            next_block
+        );
+
+        self.builder.position_at_end(iff_null_block);
+        let zero_i32 = self.builder.build_bitcast(self.context.f32_type().const_zero(), self.context.i32_type(), "zero_to_int").into_int_value();
+        let literal_zero = MetaValue::with_tag(ValueTag::Number, zero_i32.into(), self);
+        let literal_zero_packed = self.emit_store_meta_value(literal_zero);
+        self.builder.build_unconditional_branch(next_block);
+
+        self.builder.position_at_end(next_block);
+        let phi = self.builder.build_phi(self.val_type, "merge_result");
+        phi.add_incoming(&[(&original_value_packed, prev_block), (&literal_zero_packed, iff_null_block)]);
+
+        self.emit_load_meta_value(phi.as_basic_value().into_struct_value())
+    }
+
     fn emit_store_args_from_stack(&mut self, arg_count: u32) -> PointerValue<'ctx> {
         let out_stack_type = self.val_type.array_type(arg_count as u32);
         let args = self.builder.build_alloca(out_stack_type, "out_stack");
@@ -694,8 +722,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::FloatCmp(predicate) => {
                 self.emit_bin_op(|first, second, code_gen| {
-                    let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
-                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
+                    let first_not_null = code_gen.emit_null_to_zero(func, first);
+                    let second_not_null = code_gen.emit_null_to_zero(func, second);
+                    let first_f32 = code_gen.builder.build_bitcast(first_not_null.data, code_gen.context.f32_type(), "first_f32").into_float_value();
+                    let second_f32 = code_gen.builder.build_bitcast(second_not_null.data, code_gen.context.f32_type(), "second_f32").into_float_value();
 
                     let result_value = code_gen.builder.build_float_compare(predicate.clone(), second_f32, first_f32, "test_pred");
                     let result_f32 = code_gen.builder.build_unsigned_int_to_float(result_value, code_gen.context.f32_type(), "bool_to_f32");

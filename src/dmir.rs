@@ -79,6 +79,17 @@ pub enum ValueLocation {
     Local(u32)
 }
 
+macro_rules! value_tag_pred {
+    ($tag:expr) => ({ ValueTagPredicate::Tag($tag) });
+    (@union $($tag:expr),+) => ({ ValueTagPredicate::Union(vec![$(value_tag_pred!($tag)),+]) });
+}
+
+macro_rules! check_type_deopt {
+    (@$slot:literal !is $pred:expr => $deopt:expr) => {
+        DMIR::CheckTypeDeopt($slot, $pred, Box::new($deopt))
+    };
+}
+
 fn get_string_id(str: &Vec<u8>) -> StringId {
     let mut id = auxtools::raw_types::strings::StringId(0);
     unsafe {
@@ -164,7 +175,15 @@ fn decode_call(vr: &Variable, arg_count: u32, out: &mut Vec<DMIR>) {
 }
 
 fn decode_cmp(op: FloatPredicate, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
-    build_float_bin_op_deopt(DMIR::FloatCmp(op), data, proc, out);
+    out.push(check_type_deopt!(
+        @0 !is value_tag_pred!(@union ValueTag::Number, ValueTag::Null)
+        => DMIR::Deopt(data.offset, proc.id)
+    ));
+    out.push(check_type_deopt!(
+        @1 !is value_tag_pred!(@union ValueTag::Number, ValueTag::Null)
+        => DMIR::Deopt(data.offset, proc.id)
+    ));
+    out.push(DMIR::FloatCmp(op));
 }
 
 fn gen_push_null(out: &mut Vec<DMIR>) {
@@ -184,11 +203,6 @@ fn decode_float_aug_instruction(var: &Variable, action: DMIR, data: &DebugData, 
 }
 
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
-    macro_rules! value_tag_pred {
-        ($tag:expr) => ({ ValueTagPredicate::Tag($tag) });
-        (@union $($tag:expr),+) => ({ ValueTagPredicate::Union(vec![$(value_tag_pred!($tag)),+]) });
-    }
-
     // output for intermediate operations sequence
     let mut irs = vec![];
 
