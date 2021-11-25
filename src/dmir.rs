@@ -1,7 +1,7 @@
 use auxtools::raw_types::procs::ProcId;
 use auxtools::raw_types::values::ValueTag;
 use dmasm::{Instruction, Node, DebugData};
-use dmasm::operands::{Variable, ValueOpRaw};
+use dmasm::operands::{Variable, ValueOpRaw, Value};
 use std::ffi::CString;
 use std::borrow::Borrow;
 use auxtools::Proc;
@@ -326,7 +326,18 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::PushInt(i32))
                     }
                     Instruction::PushVal(op) => {
-                        irs.push(DMIR::PushVal(op.raw.unwrap()))
+                        match op.value {
+                            Value::Number(value) => {
+                                irs.push(DMIR::PushVal(ValueOpRaw {
+                                    tag: ValueTag::Number as u8,
+                                    data: unsafe { std::mem::transmute(value) }
+                                }))
+                            }
+                            _ => {
+                                irs.push(DMIR::PushVal(op.raw.unwrap()))
+                            }
+                        }
+
                     }
                     Instruction::GetFlag => {
                         irs.push(DMIR::PushTestFlag);
