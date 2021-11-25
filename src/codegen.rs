@@ -1035,6 +1035,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::End => {
                 if !self.block_ended {
                     self.emit_prologue(func);
+                    let out = func.get_nth_param(0).unwrap().into_pointer_value();
+                    self.builder.build_store(out, self.val_type.const_zero());
                     self.builder.build_return(None);
                 }
                 self.block_ended = true;
