@@ -369,7 +369,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
         // create start basic block for our function
         let block = self.context.append_basic_block(func, "base");
         self.builder.position_at_end(block);
-        self.dbg(format!("llvm function call {}", name).as_str());
+        if cfg!(debug_on_call_print) {
+            self.dbg(format!("llvm function call {}", name).as_str());
+        }
 
         return func;
     }
@@ -1183,6 +1185,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 );
 
                 self.builder.position_at_end(deopt_block);
+                if cfg!(debug_deopt_print) {
+                    self.dbg(format!("CheckType({}, {:?}, {:?}) failed: ", stack_pos, predicate, deopt).as_str());
+                    self.dbg_val(stack_value);
+                }
                 self.emit(deopt.borrow(), func);
                 self.builder.build_unconditional_branch(next_block);
 
