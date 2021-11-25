@@ -19,12 +19,16 @@
     compile_proc("/proc/deopt_arg")
     compile_proc("/datum/base/proc/deopt_src")
     compile_proc("/datum/base/proc/call_nested")
-    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret, /deopt_arg, /datum/base/deopt_src, /datum/base/call_nested
+    compile_proc("/datum/base/proc/two_arg")
+    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret, /deopt_arg, /datum/base/deopt_src, /datum/base/call_nested, /datum/base/two_arg
 
     var/datum/base/dt_local = new
+    var/datum/base/dt_local_two = new
     var/datum/base/neutral = new
 
     MARK_REF_COUNT(dt_local)
+    MARK_REF_COUNT(dt_local_two)
+
     RES(CHECK_LEAK(dt_local)) // RES: OK
 
     receive_datum(dt_local)
@@ -51,6 +55,11 @@
 
     dispatch_call_nested(dt_local)
     RES(CHECK_LEAK(dt_local)) // RES: OK
+
+    dispatch_call_two_arg(dt_local, dt_local_two)
+    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES(CHECK_LEAK(dt_local_two)) // RES: OK
+
 
 /datum/base
     var/dt_next = null
@@ -84,6 +93,14 @@
 
 /datum/base/proc/nested()
     return 10
+
+/proc/dispatch_call_two_arg(var/datum/base/one, var/datum/base/two)
+    return one.two_arg(two)
+
+/datum/base/proc/two_arg(var/datum/base/other)
+    var/l = call_nested()
+    dm_jitaux_deopt()
+    return l + other.call_nested()
 
 /proc/deopt_ret(arg)
     var/l = arg

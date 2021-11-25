@@ -101,9 +101,6 @@ pub extern "C" fn handle_deopt(
 
         (*context).test_flag = test_flag;
 
-        // cached datum will be dec on DoCall exit, make sure not to lost it
-        auxtools::raw_types::funcs::inc_ref_count(cached_datum.clone());
-
         (*context).cached_datum = cached_datum;
         (*context).dmvalue_0x20 = Value {
             tag: ValueTag::Null,

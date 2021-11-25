@@ -166,7 +166,14 @@ fn compile_proc<'ctx>(
     generate_ref_count_operations(&mut irs);
     log::debug!("ref_count_pass done");
     // Prepare LLVM internals for code-generation
-    let mut code_gen = CodeGen::create(context, &module, context.create_builder(), execution_engine, proc.parameter_names().len() as u32);
+    let mut code_gen = CodeGen::create(
+        context,
+        &module,
+        context.create_builder(),
+        execution_engine,
+        proc.parameter_names().len() as u32,
+        proc.local_names().len() as u32
+    );
     code_gen.init_builtins();
 
     let func = code_gen.create_jit_func(proc.path.as_str());

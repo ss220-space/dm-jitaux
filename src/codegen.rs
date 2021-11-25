@@ -29,7 +29,8 @@ pub struct CodeGen<'ctx, 'a> {
     internal_test_flag: Option<IntValue<'ctx>>,
     block_map: BlockMap<'ctx>,
     block_ended: bool,
-    parameter_count: u32
+    parameter_count: u32,
+    local_count: u32
 }
 
 type BlockMap<'ctx> = HashMap<String, LabelBlockInfo<'ctx>>;
@@ -51,6 +52,7 @@ struct LabelBlockInfo<'ctx> {
     locals_phi: HashMap<u32, PhiValue<'ctx>>
 }
 
+#[derive(Clone)]
 struct MetaValue<'ctx> {
     tag: IntValue<'ctx>,
     data: BasicValueEnum<'ctx>,
@@ -312,7 +314,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
         module: &'a Module<'ctx>,
         builder: Builder<'ctx>,
         execution_engine: &'a ExecutionEngine<'ctx>,
-        parameter_count: u32
+        parameter_count: u32,
+        local_count: u32,
     ) -> CodeGen<'ctx, 'a> {
 
         // TODO: Cleanup
@@ -339,7 +342,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             internal_test_flag: None,
             block_map: HashMap::new(),
             block_ended: false,
-            parameter_count
+            parameter_count,
+            local_count
         }
     }
 
@@ -1050,15 +1054,15 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 }
                 self.builder.build_store(stack_out_ptr, stack_out_array);
 
+                let local_count = self.local_count;
 
-                let local_names = Proc::from_id(proc_id.clone()).unwrap().local_names();
-
-                let out_locals_type = self.val_type.array_type(local_names.len() as u32);
+                let out_locals_type = self.val_type.array_type(local_count as u32);
                 let locals_out_ptr = self.builder.build_alloca(out_locals_type, "out_locals");
                 let mut locals_out_array = out_locals_type.const_zero();
-                for (pos, loc) in self.locals.iter() {
-                    locals_out_array = self.builder.build_insert_value(locals_out_array, loc.clone(), pos.clone(), "store_value_from_local").unwrap().into_array_value();
+                for (idx, loc) in &self.locals {
+                    locals_out_array = self.builder.build_insert_value(locals_out_array, loc.clone(), *idx, "store_value_from_local").unwrap().into_array_value();
                 }
+
                 self.builder.build_store(locals_out_ptr, locals_out_array);
 
                 let parameter_count = Proc::from_id(proc_id.clone()).unwrap().parameter_names();
@@ -1077,8 +1081,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         func.get_nth_param(1).unwrap().into(), //src: auxtools::raw_types::values::Value,
                         func.get_nth_param(3).unwrap().into(), //args: *const auxtools::raw_types::values::Value,
                         self.context.i32_type().const_int(parameter_count.len() as u64, false).into(), //args_count: u32,
-                        self.builder.build_bitcast(locals_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //locals: *const auxtools::raw_types::values::Value,
-                        self.context.i32_type().const_int(local_names.len() as u64, false).into(), //locals_count: u32
+                        self.builder.build_pointer_cast(locals_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //locals: *const auxtools::raw_types::values::Value,
+                        self.context.i32_type().const_int(local_count as u64, false).into(), //locals_count: u32
                     ],
                     "call_deopt",
                 );
