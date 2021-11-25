@@ -558,7 +558,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
     fn emit_read_value_location(&self, location: &ValueLocation) -> StructValue<'ctx> {
         match location {
             ValueLocation::Stack(rel) => {
-                self.stack_loc[rel.clone() as usize]
+                self.stack_loc[self.stack_loc.len() - 1 - (*rel as usize)]
             }
             ValueLocation::Cache => {
                 self.cache.unwrap()
