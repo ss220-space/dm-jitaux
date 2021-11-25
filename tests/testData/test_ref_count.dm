@@ -1,14 +1,4 @@
-#define CHECK_LEAK(v) out_leak(before##v, get_datum_ref_count(v))
-#define MARK_REF_COUNT(v) var/before##v = get_datum_ref_count(v)
 #define CLEAR_CACHE_VAR neutral.nop()
-
-/proc/out_leak(before, after)
-    if (after == before) {
-        return "OK"
-    } else {
-        return "NOT_OK([before] != [after])"
-    }
-
 
 /proc/do_test()
     compile_proc("/proc/receive_datum")
