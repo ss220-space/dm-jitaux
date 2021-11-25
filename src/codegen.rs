@@ -2,7 +2,7 @@ use inkwell::{IntPredicate, FloatPredicate, AddressSpace};
 use inkwell::context::Context;
 use inkwell::module::{Module, Linkage};
 use inkwell::builder::Builder;
-use inkwell::values::{PointerValue, StructValue, IntValue, BasicValueEnum, FunctionValue, AnyValue, PhiValue};
+use inkwell::values::{PointerValue, StructValue, IntValue, BasicValueEnum, FunctionValue, PhiValue};
 use std::collections::HashMap;
 use inkwell::types::StructType;
 use inkwell::execution_engine::ExecutionEngine;
@@ -13,7 +13,7 @@ use std::collections::hash_map::Entry;
 use auxtools::Proc;
 use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use std::borrow::Borrow;
-use inkwell::attributes::{Attribute, AttributeLoc};
+use inkwell::attributes::AttributeLoc;
 use crate::pads;
 
 pub struct CodeGen<'ctx, 'a> {
