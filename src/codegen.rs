@@ -470,7 +470,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let out_stack_type = self.val_type.array_type(arg_count as u32);
         let args = self.builder.build_alloca(out_stack_type, "out_stack");
         let mut stack_out_array = out_stack_type.const_zero();
-        for idx in 0..arg_count {
+        for idx in (0..arg_count).rev() {
             let arg = self.stack().pop();
             stack_out_array = self.builder.build_insert_value(stack_out_array, arg, idx as u32, "store_value_from_stack").unwrap().into_array_value();
         }

@@ -31,3 +31,4 @@ test_dm!(test_is);
 test_dm!(test_ref_count);
 test_dm!(test_local_var);
 test_dm!(test_null_cmp);
+test_dm!(test_call_args);
