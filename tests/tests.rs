@@ -18,6 +18,7 @@ test_dm!(push_val);
 test_dm!(test_cmp);
 test_dm!(test_deopt);
 test_dm!(test_mul);
+test_dm!(test_div);
 test_dm!(test_add);
 test_dm!(test_call_global);
 test_dm!(test_call_static);
