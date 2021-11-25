@@ -198,6 +198,7 @@ fn build_float_bin_op_deopt(action: DMIR, data: &DebugData, proc: &Proc, out: &m
 
 fn decode_float_aug_instruction(var: &Variable, action: DMIR, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
     decode_get_var(var, out);
+    out.push(DMIR::Swap);
     build_float_bin_op_deopt(action, data, proc, out);
     decode_set_var(var, out);
 }
