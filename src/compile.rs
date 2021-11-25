@@ -181,6 +181,7 @@ fn compile_proc<'ctx>(
     let proc_id_attr = context.create_string_attribute("proc_id", format!("{}", proc.id.0).as_str());
     func.add_attribute(AttributeLoc::Function, proc_id_attr);
 
+    code_gen.emit_prologue(func);
     // Emit LLVM IR nodes from DMIR
     for ir in irs {
         log::debug!("emit: {:?}", &ir);
