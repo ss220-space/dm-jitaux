@@ -198,7 +198,7 @@ pub fn dump_opcode_count() {
 pub fn log_init() {
     macro_rules! ver_string {
         () => {
-            format!("{} built on {}", env!("VERGEN_GIT_SEMVER"), env!("VERGEN_BUILD_TIMESTAMP"))
+            format!("{}-{} built on {}", env!("VERGEN_GIT_SEMVER"), env!("VERGEN_CARGO_PROFILE"), env!("VERGEN_BUILD_TIMESTAMP"))
         };
     }
 
