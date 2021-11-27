@@ -4,20 +4,24 @@ use std::io::Write;
 use std::{io, fs};
 use std::path::{Path, PathBuf};
 
-pub struct DMTest {
-    name: String
+pub struct DMTest<'l> {
+    name: &'l str,
+    work_dir: &'l str,
+    test_data_search_path: Vec<&'l str>,
 }
 
 
-impl DMTest {
-    pub fn new(name: String) -> Self {
+impl <'l> DMTest<'l> {
+    pub fn new(name: &'l str, work_dir: &'l str, test_data_search_path: Vec<&'l str>) -> Self {
         Self {
-            name
+            name,
+            work_dir,
+            test_data_search_path
         }
     }
 
     fn work_dir(&self) -> PathBuf {
-        Path::new(TEST_WORK_DIR).join(self.name.as_str())
+        Path::new(self.work_dir).join(self.name)
     }
 
     pub fn run_hook_test(&self, files: Vec<&str>) {
@@ -73,7 +77,15 @@ impl DMTest {
         writeln!(dme, "#define DMJIT_LIB \"{}\"", lib_path().file_name().unwrap().to_str().unwrap())?;
 
         for file_name in files {
-            let src = Path::new(TEST_DATA_DIR).join(file_name);
+            let src = self.test_data_search_path.iter()
+                .filter_map(|search_path| {
+                    let file = Path::new(search_path).join(file_name);
+                    if file.exists() {
+                        Option::Some(file)
+                    } else {
+                        Option::None
+                    }
+                }).next().unwrap();
             let target = self.work_dir().join(file_name);
             std::fs::create_dir_all(target.parent().unwrap())?;
             std::fs::copy(src, target)?;
@@ -111,10 +123,6 @@ impl DMTest {
     }
 
 }
-
-
-const TEST_WORK_DIR: &str = "tests/tmp/";
-const TEST_DATA_DIR: &str = "tests/testData/";
 
 const RES_PREFIX: &str = "// RES:";
 
@@ -154,4 +162,3 @@ fn cmd_dreamdaemon() -> Command {
         cmd
     }
 }
-

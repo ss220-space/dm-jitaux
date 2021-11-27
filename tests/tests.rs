@@ -1,11 +1,13 @@
-use base::DMTest;
-mod base;
+use test_common::DMTest;
+
+const TEST_DATA_DIR: &str = "tests/testData";
+const TEST_WORK_DIR: &str = "tests/tmp";
 
 macro_rules! test_dm {
     ($file:ident $(+ $($additional:literal),+)?) => {
         #[test]
         fn $file() {
-            DMTest::new(stringify!($file).to_string())
+            DMTest::new(stringify!($file), TEST_WORK_DIR, vec![TEST_DATA_DIR])
                 .run_hook_and_assert_result(
                     vec!(
                         $($($additional),+,)?
