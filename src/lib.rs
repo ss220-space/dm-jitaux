@@ -204,7 +204,7 @@ pub fn log_init() {
 
 
 
-    simple_logging::log_to_file("hook.log", LevelFilter::Debug).unwrap();
+    simple_logging::log_to_file("dmjit.log", LevelFilter::Debug).unwrap();
     log_panics::init();
     log::info!("Log startup, {}", ver_string!());
 
@@ -215,7 +215,7 @@ pub fn log_init() {
     pads::deopt::initialize_deopt();
     pads::debug::init();
 
-    Value::from_string(format!("dm-jitaux init success, {}", ver_string!()))
+    Value::from_string(format!("dmJIT init success, {}", ver_string!()))
 }
 
 #[hook("/proc/dmjit_dump_opcodes")]

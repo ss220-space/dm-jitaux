@@ -128,9 +128,9 @@ const RES_PREFIX: &str = "// RES:";
 
 fn lib_path() -> &'static Path {
     if cfg!(target_os = "windows") {
-        Path::new("target/i686-pc-windows-msvc/debug/dm_jitaux.dll")
+        Path::new("target/i686-pc-windows-msvc/debug/dmjit.dll")
     } else {
-        Path::new("target/i686-unknown-linux-gnu/debug/libdm_jitaux.so")
+        Path::new("target/i686-unknown-linux-gnu/debug/libdmjit.so")
     }
 }
 
