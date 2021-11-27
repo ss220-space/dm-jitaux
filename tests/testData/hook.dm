@@ -48,5 +48,8 @@
 /proc/dmjit_get_datum_ref_count(arg)
     DMJIT_NATIVE
 
-/proc/get_datum_ref_count(arg)
+/proc/dmjit_mark_time(name)
+    DMJIT_NATIVE
+
+/proc/dmjit_report_time(name)
     DMJIT_NATIVE

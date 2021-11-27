@@ -27,3 +27,7 @@ anyhow = "1.0.47"
 
 [lib]
 crate-type = ["cdylib"]
+
+[features]
+default = ["test_time"]
+test_time = []

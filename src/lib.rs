@@ -10,6 +10,9 @@ mod ref_count;
 mod variable_termination_pass;
 mod dmir_annotate;
 
+#[cfg(feature = "test_time")]
+mod time;
+
 
 #[macro_use]
 extern crate auxtools;
