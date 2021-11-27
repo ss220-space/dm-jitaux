@@ -2,11 +2,16 @@ use base::DMTest;
 mod base;
 
 macro_rules! test_dm {
-    ($file:ident) => {
+    ($file:ident $(+ $($additional:literal),+)?) => {
         #[test]
         fn $file() {
             DMTest::new(stringify!($file).to_string())
-                .run_hook_and_assert_result(vec!(concat!(stringify!($file), ".dm")));
+                .run_hook_and_assert_result(
+                    vec!(
+                        $($($additional),+,)?
+                        concat!(stringify!($file), ".dm")
+                    )
+                );
         }
     };
 }

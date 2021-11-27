@@ -98,7 +98,7 @@ pub fn guard<F: FnOnce() -> DMResult + UnwindSafe>(f: F) -> DMResult {
     }
 }
 
-#[hook("/proc/dump_call_count")]
+#[hook("/proc/dmjit_dump_call_count")]
 pub fn dump_call_count() {
     log::info!("Dump call count");
     if let Some(mut vec) = call_counts() {
@@ -136,7 +136,7 @@ pub fn var_desc(v: &Variable) -> String {
     }.to_string()
 }
 
-#[hook("/proc/dump_opcode_count")]
+#[hook("/proc/dmjit_dump_opcode_count")]
 pub fn dump_opcode_count() {
     log::info!("[DOC] Dump opcode counts");
     if let Some(mut vec) = call_counts() {
@@ -188,7 +188,7 @@ pub fn dump_opcode_count() {
     Ok(Value::null())
 }
 
-#[hook("/proc/hook_log_init")]
+#[hook("/proc/dmjit_hook_log_init")]
 pub fn log_init() {
     macro_rules! ver_string {
         () => {
@@ -212,7 +212,7 @@ pub fn log_init() {
     Value::from_string(format!("dm-jitaux init success, {}", ver_string!()))
 }
 
-#[hook("/proc/dump_opcodes")]
+#[hook("/proc/dmjit_dump_opcodes")]
 pub fn dump_opcodes(list: Value) {
     if let Ok(name) = list.as_list()?.get(Value::from(1))?.as_string() {
 
@@ -243,29 +243,29 @@ pub fn dump_opcodes(list: Value) {
 }
 
 
-#[hook("/proc/exit_test")]
+#[hook("/proc/dmjit_exit_test")]
 pub fn exit_test() {
     exit(0);
 }
 
-#[hook("/proc/toggle_dm_jitaux_hooks")]
-pub fn toggle_dm_jitaux_hooks() {
+#[hook("/proc/dmjit_toggle_hooks")]
+pub fn toggle_hooks() {
     unsafe {
         auxtools::hooks::ENABLE_CHAD_HOOKS = !auxtools::hooks::ENABLE_CHAD_HOOKS;
-        Ok(Value::from(auxtools::hooks::ENABLE_CHAD_HOOKS))
+        return Ok(Value::from(auxtools::hooks::ENABLE_CHAD_HOOKS))
     }
 
 }
 
-#[hook("/proc/toggle_dm_jitaux_call_counts")]
-pub fn toggle_dm_jitaux_call_counts() {
+#[hook("/proc/dmjit_toggle_call_counts")]
+pub fn toggle_call_counts() {
     unsafe {
         auxtools::hooks::ENABLE_CALL_COUNTS = !auxtools::hooks::ENABLE_CALL_COUNTS;
-        Ok(Value::from(auxtools::hooks::ENABLE_CALL_COUNTS))
+        return Ok(Value::from(auxtools::hooks::ENABLE_CALL_COUNTS))
     }
 }
 
-#[hook("/proc/get_datum_ref_count")]
+#[hook("/proc/dmjit_get_datum_ref_count")]
 pub fn get_datum_ref_count(arg: Value) {
     return Ok(Value::from(pads::debug::get_datum_ref_count(arg.clone())))
 }

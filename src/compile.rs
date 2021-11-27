@@ -3,7 +3,7 @@ use dmasm::{format_disassembly};
 use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine};
 use inkwell::module::Module;
-use inkwell::values::{AnyValue, FunctionValue};
+use inkwell::values::AnyValue;
 use inkwell::OptimizationLevel;
 use crate::{DisassembleEnv, guard, dmir};
 use std::mem::transmute_copy;
@@ -16,7 +16,7 @@ use inkwell::attributes::AttributeLoc;
 use crate::variable_termination_pass::variable_termination_pass;
 use crate::ref_count::generate_ref_count_operations;
 
-#[hook("/proc/compile_proc")]
+#[hook("/proc/dmjit_compile_proc")]
 pub fn compile_and_call(proc_name: auxtools::Value) {
     guard(|| {
         LLVM_CONTEXT.with(|val| {
@@ -42,7 +42,7 @@ pub fn compile_and_call(proc_name: auxtools::Value) {
 }
 
 
-#[hook("/proc/install_compiled")]
+#[hook("/proc/dmjit_install_compiled")]
 pub fn install_hooks() {
     guard(|| {
         let mut installed: Vec<String> = vec!();
