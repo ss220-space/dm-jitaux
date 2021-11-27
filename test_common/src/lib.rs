@@ -27,7 +27,7 @@ impl <'l> DMTest<'l> {
     pub fn run_hook_test(&self, files: Vec<&str>) {
         fs::remove_file(self.work_dir().join("result.txt")).ok();
         fs::remove_file(self.work_dir().join("world.txt")).ok();
-        let mut all_files = vec!("common.dm", "hook.dm");
+        let mut all_files = vec!("common.dm", "hook.dm", "bench.dm");
         all_files.extend(files);
         assert!(self.compile_files(all_files).unwrap().success());
         assert_eq!(self.link_hook_lib().unwrap(), ());

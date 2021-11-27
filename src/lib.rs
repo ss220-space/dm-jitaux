@@ -13,6 +13,9 @@ mod dmir_annotate;
 #[cfg(feature = "test_time")]
 mod time;
 
+#[cfg(feature = "bench_utils")]
+mod bench_utils;
+
 
 #[macro_use]
 extern crate auxtools;
