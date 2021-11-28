@@ -17,7 +17,7 @@ pub fn init() {
     let scanner = auxtools::sigscan::Scanner::for_module(auxtools::BYONDCORE).unwrap();
 
     unsafe {
-        DATUM_ARRAY_PTR = *((scanner.find(signature!("8b 15 ?? ?? ?? ?? 8b 14 82 85 d2 74 7f 83 42 10 01 c9 c3 90")).unwrap()).add(2) as *mut *mut *mut *mut u8);
+        DATUM_ARRAY_PTR = *((scanner.find(signature!("8b 15 ?? ?? ?? ?? 8b 14 82 85 d2 74 ad 8b 4a 18")).unwrap()).add(2) as *mut *mut *mut *mut u8);
     }
 }
 
