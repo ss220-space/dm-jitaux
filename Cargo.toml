@@ -15,7 +15,7 @@ log-panics = { version = "2", features = ["with-backtrace"] }
 rayon = "1.5"
 rand = "0.8.3"
 measure_time = "0.6.0"
-dmasm = { git = "https://github.com/ss220-space/dmasm", commit = "2393f82726ac3497b2e43fd7fa89a2fd12850591" }
+dmasm = { git = "https://github.com/ss220-space/dmasm", rev = "2393f82726ac3497b2e43fd7fa89a2fd12850591" }
 inkwell = { git = "https://github.com/TheDan64/inkwell", default-features = false, branch = "master", features = ["llvm12-0", "target-x86"] }
 llvm-sys = "120"
 libc = "0.2.97"
