@@ -162,7 +162,7 @@ fn decode_call(vr: &Variable, arg_count: u32, out: &mut Vec<DMIR>) {
         Variable::StaticVerb(_) => panic!("Unsupported: {:?}", vr.clone()),
         Variable::DynamicVerb(_) => panic!("Unsupported: {:?}", vr.clone()),
         Variable::StaticProc(proc_id) => {
-            let name_id = unsafe { &*Proc::find(&proc_id.0).unwrap().entry }.name;
+            let name_id = unsafe { &*Proc::find(&proc_id.path).unwrap().entry }.name;
             out.push(DMIR::PushCache);
             out.push(DMIR::CallProcByName(name_id, 2, arg_count))
         }
@@ -278,14 +278,14 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::FloatAbs)
                     }
                     Instruction::CallGlob(arg_count, callee) => {
-                        match callee.0.as_ref() {
+                        match callee.path.as_ref() {
                             "/dm_jitaux_deopt" => {
                                 irs.push(DMIR::Deopt(data.offset, proc.id));
                                 gen_push_null(&mut irs);
                             }
                             _ => {
                                 gen_push_null(&mut irs);
-                                let id = Proc::find(callee.0).unwrap().id;
+                                let id = Proc::find(callee.path).unwrap().id;
                                 irs.push(DMIR::CallProcById(id, 2, arg_count))
                             }
                         }
