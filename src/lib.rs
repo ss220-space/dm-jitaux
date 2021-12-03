@@ -19,6 +19,9 @@ mod bench_utils;
 #[cfg(feature = "tools")]
 mod tools;
 
+#[cfg(feature = "test_utils")]
+mod test_utils;
+
 
 #[macro_use]
 extern crate auxtools;
@@ -172,11 +175,6 @@ pub fn dump_opcodes(list: Value) {
 }
 
 
-#[hook("/proc/dmjit_exit_test")]
-pub fn exit_test() {
-    exit(0);
-}
-
 #[hook("/proc/dmjit_toggle_hooks")]
 pub fn toggle_hooks() {
     unsafe {
@@ -192,9 +190,4 @@ pub fn toggle_call_counts() {
         auxtools::hooks::ENABLE_CALL_COUNTS = !auxtools::hooks::ENABLE_CALL_COUNTS;
         return Ok(Value::from(auxtools::hooks::ENABLE_CALL_COUNTS))
     }
-}
-
-#[hook("/proc/dmjit_get_datum_ref_count")]
-pub fn get_datum_ref_count(arg: Value) {
-    return Ok(Value::from(pads::debug::get_datum_ref_count(arg.clone())))
 }

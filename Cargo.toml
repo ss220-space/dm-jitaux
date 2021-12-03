@@ -36,7 +36,8 @@ name = "bench"
 harness = false
 
 [features]
-default = ["test_time", "bench_utils", "tools"]
+default = ["test_time", "test_utils", "bench_utils", "tools"]
 test_time = []
-bench_utils = ["criterion"]
+test_utils = []
+bench_utils = ["criterion", "test_utils"]
 tools = []
