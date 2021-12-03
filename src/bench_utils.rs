@@ -1,3 +1,4 @@
+use std::time::Duration;
 use auxtools::{DMResult, Value};
 use criterion::Criterion;
 
@@ -13,7 +14,9 @@ fn run_benchmark(group: Value, name: Value) {
 
 #[hook("/proc/dmjit_bench_init")]
 fn init_benchmark() {
-    unsafe { HARNESS = Some(Criterion::default()); }
+    let harness = Criterion::default()
+        .measurement_time(Duration::from_secs(10));
+    unsafe { HARNESS = Some(harness); }
 
     DMResult::Ok(Value::null())
 }
