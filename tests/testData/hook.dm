@@ -53,3 +53,6 @@
 
 /proc/dmjit_report_time(name)
     DMJIT_NATIVE
+
+/proc/dmjit_call_hierarchy(name)
+    DMJIT_NATIVE

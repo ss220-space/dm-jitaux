@@ -21,6 +21,9 @@ llvm-sys = "120"
 libc = "0.2.97"
 typed-arena = "2.0.1"
 criterion = { version = "0.3.5", optional = true}
+serde_json = "1.0.72"
+serde = "1.0.72"
+itertools = "0.10.1"
 
 [dev-dependencies]
 test_common = { path = "test_common" }

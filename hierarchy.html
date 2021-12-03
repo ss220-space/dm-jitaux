@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <style>
+        li.call:not(.unfold) > ul {
+            display: none
+        }
+
+        li.dynamic:not(.unfold) > ul {
+            display: none
+        }
+
+        li.call.unfold::before {
+            content: "✅"
+        }
+        li.call.opcode::before {
+            content: "🔎"
+        }
+        li.call.unfold.opcode::before {
+            content: "✅🔎"
+        }
+        /*li.call > span.perf {*/
+        /*    position: absolute;*/
+        /*    right: 5%;*/
+        /*}*/
+
+        li.call:nth-child(even) {
+            background-color: lightgray;
+        }
+        li.call > ul {
+            background-color: white;
+        }
+
+        span.perf > span:nth-child(1) {
+            position: absolute;
+            right: 20%;
+        }
+        span.perf > span:nth-child(2)  {
+            position: absolute;
+            right: 12%;
+        }
+        span.perf > span:nth-child(3) {
+            position: absolute;
+            right: 6%;
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="data.js"></script>
+    <script src="hierarchy.js"></script>
+</head>
+<body>
+<table id="opcodes">
+    <thead>
+    <tr><th>Opcode</th><th>Proc uses</th><th>Total</th></tr>
+    </thead>
+    <tbody>
+
+    </tbody>
+</table>
+<ul id="procs"></ul>
+</body>
+</html>
+        
