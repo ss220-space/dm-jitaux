@@ -1,9 +1,10 @@
+use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
+use auxtools::{Proc, Value};
 use auxtools::hooks::call_counts;
-use auxtools::Value;
 use dmasm::Instruction;
+use dmasm::format_disassembly;
 use dmasm::operands::Variable;
-use std::borrow::{BorrowMut, Borrow};
 use crate::DisassembleEnv;
 
 pub fn var_desc(v: &Variable) -> String {
@@ -20,7 +21,13 @@ pub fn var_desc(v: &Variable) -> String {
         Variable::Arg(_) => "Arg",
         Variable::Local(_) => "Local",
         Variable::Global(_) => "Global",
-        Variable::SetCache(a, b) => return format!("SetCache({}, {})", var_desc(a.borrow()), var_desc(b.borrow())),
+        Variable::SetCache(a, b) => {
+            return format!(
+                "SetCache({}, {})",
+                var_desc(a.borrow()),
+                var_desc(b.borrow())
+            );
+        }
         Variable::Initial(_) => "Initial",
         Variable::IsSaved(_) => "IsSaved",
         Variable::Field(_) => "Field",
@@ -28,7 +35,8 @@ pub fn var_desc(v: &Variable) -> String {
         Variable::DynamicVerb(_) => "DynamicVerb",
         Variable::StaticProc(_) => "StaticProc",
         Variable::DynamicProc(_) => "DynamicProc",
-    }.to_string()
+    }
+    .to_string()
 }
 
 #[hook("/proc/dmjit_dump_opcode_count")]
@@ -44,19 +52,19 @@ pub fn dump_opcode_count() {
 
         for count in vec {
             unsafe {
-                let (nodes, res) = dmasm::disassembler::disassemble(count.proc.bytecode(), &mut env);
+                let (nodes, res) =
+                    dmasm::disassembler::disassemble(count.proc.bytecode(), &mut env);
                 for node in nodes {
                     match node {
                         dmasm::Node::Instruction(insn, _) => {
-
                             let mut name = insn.op_name();
                             match insn {
                                 Instruction::Call(v, _) => {
                                     name = format!("{} {}", name, var_desc(&v))
-                                },
+                                }
                                 Instruction::CallStatement(v, _) => {
                                     name = format!("{} {}", name, var_desc(&v))
-                                },
+                                }
                                 Instruction::GetVar(v) => {
                                     name = format!("{} {}", name, var_desc(&v))
                                 }
@@ -79,6 +87,36 @@ pub fn dump_opcode_count() {
         for (op, count) in res {
             log::info!("[DOC] {}\t{}", count, op);
         }
+    }
+    Ok(Value::null())
+}
+
+#[hook("/proc/dmjit_dump_opcodes")]
+pub fn dump_opcodes(list: Value) {
+    if let Ok(name) = list.as_list()?.get(Value::from(1))?.as_string() {
+        let mut override_id = 0;
+        loop {
+            if let Some(proc) = Proc::find_override(name.clone(), override_id) {
+                let mut env = DisassembleEnv {};
+
+                let bytecode = unsafe { proc.bytecode() };
+
+                let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
+
+                log::info!("override_id: {}, proc.path: {}", override_id, proc.path);
+                log::info!("{:?}", unsafe { &*proc.entry });
+                log::info!("{}", format_disassembly(&nodes, None));
+                log::info!("{:?}", proc.parameter_names());
+                override_id += 1;
+            } else {
+                if override_id == 0 {
+                    log::error!("Function not found {}", name);
+                }
+                break;
+            }
+        }
+    } else {
+        log::error!("Not a str {}, {}", list, list.to_string()?)
     }
     Ok(Value::null())
 }

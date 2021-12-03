@@ -36,8 +36,6 @@ use auxtools::hooks::call_counts;
 
 use log::LevelFilter;
 use std::panic::{UnwindSafe, catch_unwind};
-use dmasm::format_disassembly;
-use std::process::exit;
 
 
 pub struct DisassembleEnv;
@@ -144,35 +142,7 @@ pub fn log_init() {
     Value::from_string(format!("dmJIT init success, {}", ver_string!()))
 }
 
-#[hook("/proc/dmjit_dump_opcodes")]
-pub fn dump_opcodes(list: Value) {
-    if let Ok(name) = list.as_list()?.get(Value::from(1))?.as_string() {
 
-        let mut override_id = 0;
-        loop {
-            if let Some(proc) = Proc::find_override(name.clone(), override_id) {
-                let mut env = DisassembleEnv {};
-
-                let bytecode = unsafe { proc.bytecode() };
-
-                let (nodes, _error) = dmasm::disassembler::disassemble(bytecode, &mut env);
-
-                log::info!("override_id: {}, proc.path: {}", override_id, proc.path);
-                log::info!("{:?}", unsafe { &*proc.entry });
-                log::info!("{}", format_disassembly(&nodes, None));
-                override_id += 1;
-            } else {
-                if override_id == 0 {
-                    log::error!("Function not found {}", name);
-                }
-                break
-            }
-        }
-    } else {
-        log::error!("Not a str {}, {}", list, list.to_string()?)
-    }
-    Ok(Value::null())
-}
 
 
 #[hook("/proc/dmjit_toggle_hooks")]
