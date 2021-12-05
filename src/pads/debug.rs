@@ -1,14 +1,22 @@
 use std::ffi::CStr;
 use auxtools::{sigscan, Value};
+use auxtools::raw_types::values::ValueData;
 
 #[no_mangle]
 pub extern "C" fn handle_debug(str: *mut i8) {
     log::debug!("dbg: {}", unsafe { CStr::from_ptr(str) }.to_str().unwrap());
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct ValueRaw {
+    tag: u8,
+    data: ValueData
+}
+
 #[no_mangle]
-pub extern "C" fn handle_debug_val(val: auxtools::raw_types::values::Value) {
-    log::debug!("dbg: {:?}, {} -- {:?}", val.tag, unsafe { val.data.id }, val)
+pub extern "C" fn handle_debug_val(val: ValueRaw) {
+    log::debug!("dbg: {:#X} {}", val.tag, unsafe { val.data.id })
 }
 
 pub static mut DATUM_ARRAY_PTR : *mut *mut *mut u8 = std::ptr::null_mut();
