@@ -449,7 +449,7 @@ impl<'t> Analyzer<'t> {
             }
             DMIR::UnsetLocal(idx) => {
                 if let Some(local) = self.locals.remove(idx) {
-                    self.drains.push(RValueDrain::ConsumeDrain(pos, local, DecRefOp::Pre(ValueLocation::Cache)))
+                    self.drains.push(RValueDrain::ConsumeDrain(pos, local, DecRefOp::Pre(ValueLocation::Local(*idx))))
                 } else {
                     panic!("No local found for idx: {} at pos: {}", idx, pos);
                 }

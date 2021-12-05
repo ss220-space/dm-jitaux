@@ -10,7 +10,8 @@
     compile_proc("/datum/base/proc/deopt_src")
     compile_proc("/datum/base/proc/call_nested")
     compile_proc("/datum/base/proc/two_arg")
-    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret, /deopt_arg, /datum/base/deopt_src, /datum/base/call_nested, /datum/base/two_arg
+    compile_proc("/datum/base/proc/unbalanced_if")
+    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret, /deopt_arg, /datum/base/deopt_src, /datum/base/call_nested, /datum/base/two_arg, /datum/base/unbalanced_if
 
     var/datum/base/dt_local = new
     var/datum/base/dt_local_two = new
@@ -50,6 +51,8 @@
     RES(CHECK_LEAK(dt_local)) // RES: OK
     RES(CHECK_LEAK(dt_local_two)) // RES: OK
 
+    dt_local.unbalanced_if_wrap(TRUE)
+    RES(CHECK_LEAK(dt_local)) // RES: OK
 
 /datum/base
     var/dt_next = null
@@ -91,6 +94,14 @@
     var/l = call_nested()
     dm_jitaux_deopt()
     return l + other.call_nested()
+
+/datum/base/proc/unbalanced_if(v)
+    if (v)
+        var/datum/base/l = call_nested()
+        l.nested()
+
+/datum/base/proc/unbalanced_if_wrap(v)
+    unbalanced_if(v)
 
 /proc/deopt_ret(arg)
     var/l = arg
