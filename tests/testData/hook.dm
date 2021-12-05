@@ -53,3 +53,6 @@
 
 /proc/dmjit_report_time(name)
     DMJIT_NATIVE
+
+/proc/dmjit_dump_deopts()
+    DMJIT_NATIVE

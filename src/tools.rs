@@ -6,6 +6,7 @@ use dmasm::Instruction;
 use dmasm::format_disassembly;
 use dmasm::operands::Variable;
 use crate::DisassembleEnv;
+use crate::pads::deopt::DEOPT_COUNT;
 
 pub fn var_desc(v: &Variable) -> String {
     match v {
@@ -118,5 +119,16 @@ pub fn dump_opcodes(list: Value) {
     } else {
         log::error!("Not a str {}, {}", list, list.to_string()?)
     }
+    Ok(Value::null())
+}
+
+#[hook("/proc/dmjit_dump_deopts")]
+fn dump_deopts() {
+    DEOPT_COUNT.with(|deopt_data| {
+        log::info!("Dump deopt statistics");
+        for ((proc_id, offset), count) in deopt_data.borrow().iter() {
+            log::info!("{:?} {}@{:X} -- {}", proc_id, Proc::from_id(*proc_id).map_or("_unk".to_string(), |proc| proc.path), offset, count)
+        }
+    });
     Ok(Value::null())
 }

@@ -3,7 +3,7 @@
 #![feature(asm)]
 
 mod compile;
-mod pads;
+pub(crate) mod pads;
 mod dmir;
 mod codegen;
 mod ref_count;

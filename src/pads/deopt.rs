@@ -1,5 +1,7 @@
 extern crate libc;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use auxtools::raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
 use auxtools::raw_types::values::{ValueData, ValueTag, Value};
 use auxtools::raw_types::strings::StringId;
@@ -30,6 +32,10 @@ fn do_call_trampoline(proc_instance: *mut ProcInstance) -> Value {
     *out = DO_CALL.unwrap()(proc);
 }
 
+thread_local! {
+    pub static DEOPT_COUNT: RefCell<HashMap<(ProcId, u32), u32>> = RefCell::new(HashMap::new());
+}
+
 #[no_mangle]
 pub extern "C" fn handle_deopt(
     out: *mut Value,
@@ -46,8 +52,20 @@ pub extern "C" fn handle_deopt(
     locals: *const Value,
     locals_count: u32
 ) {
+    let deopt_count = DEOPT_COUNT.with(|deopt_data| {
+        *deopt_data.borrow_mut().entry((proc_id, offset))
+            .and_modify(|prev| *prev += 1)
+            .or_insert(1)
+    });
 
-    log::debug!("Deopt called entry {:?}", proc_id);
+    let log_deopt =
+        if cfg!(deopt_print_debug) {
+            true
+        } else {
+            deopt_count < 10
+        };
+
+    if log_deopt { log::debug!("Deopt called entry {:?}", proc_id); }
     unsafe {
         let context = {
             let size = std::mem::size_of::<ExecutionContext>() as libc::size_t;
@@ -159,11 +177,11 @@ pub extern "C" fn handle_deopt(
 	    pub some_time4: Timeval,
          */
 
-        log::debug!("Deopt called: context {:?}, proc {:?}", *context, *proc);
+        if log_deopt { log::debug!("Deopt called: context {:?}, proc {:?}", *context, *proc); }
 
         *out = do_call_trampoline(proc);
 
-        log::debug!("Deopt return: {:?}", *out);
+        if log_deopt { log::debug!("Deopt return: {:?}", *out); }
     };
 }
 
