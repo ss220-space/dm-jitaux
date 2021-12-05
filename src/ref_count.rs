@@ -347,7 +347,7 @@ impl<'t> Analyzer<'t> {
             DMIR::Test => {
                 op_effect!(@consume @stack);
             }
-            DMIR::JZ(lbl) => {
+            DMIR::JNZInternal(lbl) | DMIR::JZInternal(lbl) | DMIR::JZ(lbl) => {
                 Analyzer::merge_block(
                     &self.stack,
                     &self.cache,
@@ -372,8 +372,6 @@ impl<'t> Analyzer<'t> {
             DMIR::TestInternal => {
                 op_effect!(@consume @stack);
             }
-            DMIR::JZInternal(_) => {}
-            DMIR::JNZInternal(_) => {}
             DMIR::EnterBlock(lbl) => {
                 assert!(self.block_ended);
                 let lbl_str = lbl.to_string();
