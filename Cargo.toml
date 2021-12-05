@@ -41,3 +41,6 @@ test_time = []
 test_utils = []
 bench_utils = ["criterion", "test_utils"]
 tools = []
+
+[profile.release-dist]
+inherits = "release"

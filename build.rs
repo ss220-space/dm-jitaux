@@ -7,7 +7,13 @@ fn main() -> Result<()> {
     *config.build_mut().timezone_mut() = TimeZone::Local;
     println!("cargo:rerun-if-changed=src");
 
-    println!("cargo:rustc-cfg=debug_deopt_print");
+    if std::env::var("OUT_DIR").unwrap().contains("release-dist") {
+        println!("cargo:rustc-cfg=rotate_logs");
+        println!("cargo:rustc-env=DMJIT_LOG_PREFIX=data/logs/");
+    } else {
+        println!("cargo:rustc-cfg=debug_deopt_print");
+        println!("cargo:rustc-env=DMJIT_LOG_PREFIX=");
+    }
     //println!("cargo:rustc-cfg=debug_on_call_print");
 
 

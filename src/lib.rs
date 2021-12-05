@@ -36,6 +36,7 @@ use auxtools::hooks::call_counts;
 
 use log::LevelFilter;
 use std::panic::{UnwindSafe, catch_unwind};
+use std::path::Path;
 
 
 pub struct DisassembleEnv;
@@ -118,6 +119,21 @@ pub fn dump_call_count() {
     Ok(Value::null())
 }
 
+macro_rules! log_file {
+    ($name:literal) => { concat!(env!("DMJIT_LOG_PREFIX"), $name) };
+}
+
+fn rotate_logs(from: &Path, num: u32) {
+    let target_name = format!(log_file!("dmjit.log.{}"), num);
+    let target = Path::new(target_name.as_str());
+    if target.exists() && num < 10 {
+        rotate_logs(target, num + 1)
+    }
+    if let Err(error) = std::fs::copy(from, target) {
+        log::error!("Failed to rotate logs ({:?} -> {:?}): {}", from, target, error)
+    }
+}
+
 #[hook("/proc/dmjit_hook_log_init")]
 pub fn log_init() {
     macro_rules! ver_string {
@@ -126,9 +142,10 @@ pub fn log_init() {
         };
     }
 
-
-
-    simple_logging::log_to_file("dmjit.log", LevelFilter::Debug).unwrap();
+    if cfg!(rotate_logs) {
+        rotate_logs(Path::new(log_file!("dmjit.log")), 0);
+    }
+    simple_logging::log_to_file(log_file!("dmjit.log"), LevelFilter::Debug).unwrap();
     log_panics::init();
     log::info!("Log startup, {}", ver_string!());
 
