@@ -74,13 +74,8 @@ pub extern "C" fn handle_deopt(
             r as *mut ExecutionContext
         };
 
-        let proc = {
-            let size = std::mem::size_of::<ProcInstance>() as libc::size_t;
-            let r = libc::malloc(size);
-            libc::memset(r, 0, size);
-            r as *mut ProcInstance
-        };
-
+        let mut proc_data = std::mem::zeroed::<ProcInstance>();
+        let proc = &mut proc_data;
 
         (*proc).proc = proc_id;
         (*proc).flags = proc_flags;
