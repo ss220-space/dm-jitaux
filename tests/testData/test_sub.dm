@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/sub")
+    compile_proc(/proc/sub)
     CHECK_INSTALL_COMPILED // RES: /sub
 
     RES(sub(2, 10, 12)) // RES: -20

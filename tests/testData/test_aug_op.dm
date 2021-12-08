@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/datum/simple/update")
+    compile_proc(/datum/simple/proc/update)
     CHECK_INSTALL_COMPILED // RES: /datum/simple/update
 
     var/datum/simple/s = new

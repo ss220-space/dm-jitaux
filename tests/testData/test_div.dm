@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/div")
+    compile_proc(/proc/div)
     CHECK_INSTALL_COMPILED // RES: /div
 
     RES(div(2, 10)) // RES: 0.2

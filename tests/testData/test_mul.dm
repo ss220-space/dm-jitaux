@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/mul")
+    compile_proc(/proc/mul)
     CHECK_INSTALL_COMPILED // RES: /mul
 
     RES(mul(2, 10)) // RES: 20

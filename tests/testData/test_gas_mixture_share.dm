@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/datum/gas_mixture/share")
+    compile_proc(/datum/gas_mixture/share)
     CHECK_INSTALL_COMPILED // RES: /datum/gas_mixture/share, /datum/gas_mixture/share.1
 
     var/datum/gas_mixture/cell_2 = new

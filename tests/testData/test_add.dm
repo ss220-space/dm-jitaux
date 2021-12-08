@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/sum")
+    compile_proc(/proc/sum)
     CHECK_INSTALL_COMPILED // RES: /sum
 
     RES(sum(2, 10, 12)) // RES: 24

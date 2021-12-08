@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/do_round")
+    compile_proc(/proc/do_round)
     CHECK_INSTALL_COMPILED // RES: /do_round
 
     RES(do_round(2, 10)) // RES: 0

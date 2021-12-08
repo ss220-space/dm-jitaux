@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/do_check")
+    compile_proc(/proc/do_check)
     CHECK_INSTALL_COMPILED // RES: /do_check
 
     RES(do_check(3, 2)) // RES: 1

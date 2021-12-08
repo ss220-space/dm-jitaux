@@ -1,6 +1,6 @@
 /proc/do_test()
-    compile_proc("/datum/no_neg/proc/static_call")
-    compile_proc("/datum/no_neg/proc/static_call_statement")
+    compile_proc(/datum/no_neg/proc/static_call)
+    compile_proc(/datum/no_neg/proc/static_call_statement)
     CHECK_INSTALL_COMPILED // RES: /datum/no_neg/static_call, /datum/no_neg/static_call_statement
     var/datum/no_neg/s = new
     RES(s.static_call(-1)) // RES: 0

@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/do_deopt")
+    compile_proc(/proc/do_deopt)
     CHECK_INSTALL_COMPILED // RES: /do_deopt
 
     RES(do_deopt(2, 1)) // RES: 3

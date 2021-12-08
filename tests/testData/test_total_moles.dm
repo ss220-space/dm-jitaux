@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/datum/gas_mixture/proc/total_moles")
+    compile_proc(/datum/gas_mixture/proc/total_moles)
     CHECK_INSTALL_COMPILED // RES: /datum/gas_mixture/total_moles
 
     var/datum/gas_mixture/mix = new

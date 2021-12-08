@@ -1,16 +1,16 @@
 #define CLEAR_CACHE_VAR neutral.nop()
 
 /proc/do_test()
-    compile_proc("/proc/receive_datum")
-    compile_proc("/proc/access_datum")
-    compile_proc("/proc/pass_datum")
-    compile_proc("/proc/store_restore_datum")
-    compile_proc("/proc/deopt_ret")
-    compile_proc("/proc/deopt_arg")
-    compile_proc("/datum/base/proc/deopt_src")
-    compile_proc("/datum/base/proc/call_nested")
-    compile_proc("/datum/base/proc/two_arg")
-    compile_proc("/datum/base/proc/unbalanced_if")
+    compile_proc(/proc/receive_datum)
+    compile_proc(/proc/access_datum)
+    compile_proc(/proc/pass_datum)
+    compile_proc(/proc/store_restore_datum)
+    compile_proc(/proc/deopt_ret)
+    compile_proc(/proc/deopt_arg)
+    compile_proc(/datum/base/proc/deopt_src)
+    compile_proc(/datum/base/proc/call_nested)
+    compile_proc(/datum/base/proc/two_arg)
+    compile_proc(/datum/base/proc/unbalanced_if)
     CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret, /deopt_arg, /datum/base/deopt_src, /datum/base/call_nested, /datum/base/two_arg, /datum/base/unbalanced_if
 
     var/datum/base/dt_local = new

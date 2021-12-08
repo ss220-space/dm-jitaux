@@ -1,6 +1,6 @@
 /proc/do_test()
-    compile_proc("/proc/cond_false")
-    compile_proc("/proc/cond_true")
+    compile_proc(/proc/cond_false)
+    compile_proc(/proc/cond_true)
     CHECK_INSTALL_COMPILED // RES: /cond_false, /cond_true
 
     RES(cond_true()) // RES: 1

@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/proc/is_null")
+    compile_proc(/proc/is_null)
     CHECK_INSTALL_COMPILED // RES: /is_null
 
     RES(is_null(null)) // RES: 1

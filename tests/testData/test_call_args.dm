@@ -1,5 +1,5 @@
 /proc/do_test()
-    compile_proc("/datum/base/proc/dynamic_call")
+    compile_proc(/datum/base/proc/dynamic_call)
     CHECK_INSTALL_COMPILED // RES: /datum/base/dynamic_call
 
     var/datum/base/a = new

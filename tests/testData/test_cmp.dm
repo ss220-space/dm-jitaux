@@ -1,10 +1,10 @@
 /proc/do_test()
-    compile_proc("/proc/greater")
-    compile_proc("/proc/greater_or_eq")
-    compile_proc("/proc/lower")
-    compile_proc("/proc/lower_or_eq")
-    compile_proc("/proc/not")
-    compile_proc("/proc/eq")
+    compile_proc(/proc/greater)
+    compile_proc(/proc/greater_or_eq)
+    compile_proc(/proc/lower)
+    compile_proc(/proc/lower_or_eq)
+    compile_proc(/proc/not)
+    compile_proc(/proc/eq)
     CHECK_INSTALL_COMPILED // RES: /greater, /greater_or_eq, /lower, /lower_or_eq, /not, /eq
 
     RES(greater(2, 1)) // RES: a
