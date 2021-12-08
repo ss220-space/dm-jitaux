@@ -11,6 +11,8 @@ use inkwell::passes::PassManager;
 use std::ptr::NonNull;
 use std::marker::PhantomPinned;
 use std::pin::Pin;
+use auxtools::raw_types::procs::ProcId;
+use auxtools::raw_types::values::ValueTag;
 use crate::codegen::CodeGen;
 use inkwell::attributes::AttributeLoc;
 use crate::variable_termination_pass::variable_termination_pass;
@@ -21,7 +23,22 @@ pub fn compile_and_call(proc_name: auxtools::Value) {
     guard(|| {
         LLVM_CONTEXT.with(|val| {
             let mut override_id = 0;
-            let name = proc_name.as_string().unwrap();
+            let base_proc = match proc_name.raw.tag {
+                ValueTag::String => {
+                    Proc::find(proc_name.as_string().unwrap())
+                }
+                ValueTag::ProcId => {
+                    Proc::from_id(ProcId(unsafe { proc_name.raw.data.id }))
+                }
+                _ => Option::None
+            };
+
+            let name = if let Some(base_proc) = base_proc {
+                base_proc.path
+            } else {
+                return
+            };
+
             loop {
                 if let Some(proc) = Proc::find_override(&name, override_id) {
                     compile_proc(
