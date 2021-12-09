@@ -1,11 +1,10 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
 use auxtools::{Proc, Value};
-use auxtools::hooks::call_counts;
 use dmasm::Instruction;
 use dmasm::format_disassembly;
 use dmasm::operands::Variable;
-use crate::DisassembleEnv;
+use crate::{call_counts, DisassembleEnv};
 use crate::pads::deopt::DEOPT_COUNT;
 
 pub fn var_desc(v: &Variable) -> String {

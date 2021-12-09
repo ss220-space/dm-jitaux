@@ -5,7 +5,7 @@ use inkwell::execution_engine::{ExecutionEngine};
 use inkwell::module::Module;
 use inkwell::values::AnyValue;
 use inkwell::OptimizationLevel;
-use crate::{DisassembleEnv, guard, dmir};
+use crate::{DisassembleEnv, guard, dmir, ByondProcFunc, chad_hook_by_id};
 use std::mem::transmute_copy;
 use inkwell::passes::PassManager;
 use std::ptr::NonNull;
@@ -77,7 +77,7 @@ pub fn install_hooks() {
                     if !name.starts_with("<intrinsic>/") && func_value.get_intrinsic_id() == 0 {
                         log::info!("installing {}", name);
                         installed.push(name.to_string());
-                        let func: auxtools::hooks::ByondProcFunc = unsafe {
+                        let func: ByondProcFunc = unsafe {
                             transmute_copy(&execution_engine.get_function_address(name).unwrap())
                         };
 
@@ -87,7 +87,7 @@ pub fn install_hooks() {
                         // TODO: cleanup
                         let proc_id = auxtools::raw_types::procs::ProcId(proc_id_attrib.get_string_value().to_string_lossy().parse::<u32>().unwrap());
                         let proc = Proc::from_id(proc_id).unwrap();
-                        auxtools::hooks::chad_hook_by_id(proc.id, func);
+                        chad_hook_by_id(proc.id, func);
                     }
                 }
 

@@ -27,16 +27,17 @@ mod test_utils;
 extern crate auxtools;
 extern crate log;
 
+use std::collections::HashMap;
 use auxtools::{hook, CompileTimeHook, StringRef, raw_types, DMResult, Runtime};
 use auxtools::Value;
 use auxtools::Proc;
 use auxtools::inventory;
-use auxtools::hooks::call_counts;
 
 
 use log::LevelFilter;
 use std::panic::{UnwindSafe, catch_unwind};
 use std::path::Path;
+use auxtools::raw_types::procs::ProcId;
 
 
 pub struct DisassembleEnv;
@@ -153,20 +154,86 @@ pub fn log_init() {
         log::info!("Hooked {}", hook.proc_path)
     }
 
+    auxtools::hooks::install_interceptor(intercept_proc_call);
+
     pads::deopt::initialize_deopt();
     pads::debug::init();
 
     Value::from_string(format!("dmJIT init success, {}", ver_string!()))
 }
 
+pub type ByondProcFunc = unsafe extern "C" fn(out: *mut raw_types::values::Value, src: raw_types::values::Value, usr: raw_types::values::Value, args: *mut raw_types::values::Value, arg_count: u32) -> ();
+static mut CHAD_HOOKS: Vec<Option<ByondProcFunc>> = Vec::new();
 
+static mut ENABLE_CHAD_HOOKS: bool = true;
+
+static mut CALL_COUNT: Option<HashMap<ProcId, u32>> = Option::None;
+
+pub struct CallCount {
+    pub proc: Proc,
+    pub count: u32
+}
+
+pub fn call_counts() -> Option<Vec<CallCount>> {
+    if let Some(counts) = unsafe { &CALL_COUNT } {
+        let counts = counts.iter().filter_map(|(proc_id, count)|
+            if let Some(proc) = Proc::from_id(*proc_id) {
+                Some(CallCount { proc, count: *count })
+            } else {
+                None
+            }
+        ).collect::<Vec<_>>();
+        return Some(counts);
+    }
+    return None;
+}
+
+
+fn intercept_proc_call(
+    ret: *mut raw_types::values::Value,
+    usr_raw: raw_types::values::Value,
+    _proc_type: u32,
+    proc_id: raw_types::procs::ProcId,
+    _unknown1: u32,
+    src_raw: raw_types::values::Value,
+    args_ptr: *mut raw_types::values::Value,
+    num_args: usize,
+    _unknown2: u32,
+    _unknown3: u32,
+) -> u8 {
+    unsafe {
+        if ENABLE_CHAD_HOOKS {
+            if let Some(Some(hook)) = CHAD_HOOKS.get(proc_id.0 as usize) {
+                hook(ret, src_raw, usr_raw, args_ptr, num_args as u32);
+                return 1
+            }
+        }
+        if let Some(counts) = &mut CALL_COUNT {
+            *counts.entry(proc_id)
+                .or_insert(0)
+                += 1;
+        }
+    }
+    0
+}
+
+pub fn chad_hook_by_id(proc_id: ProcId, hook: ByondProcFunc) {
+    unsafe {
+        let hooks = &mut CHAD_HOOKS;
+        let idx = proc_id.0 as usize;
+        if idx >= hooks.len() {
+            hooks.resize((idx + 1) as usize, None);
+        }
+        hooks[idx] = Some(hook);
+    }
+}
 
 
 #[hook("/proc/dmjit_toggle_hooks")]
 pub fn toggle_hooks() {
     unsafe {
-        auxtools::hooks::ENABLE_CHAD_HOOKS = !auxtools::hooks::ENABLE_CHAD_HOOKS;
-        return Ok(Value::from(auxtools::hooks::ENABLE_CHAD_HOOKS))
+        ENABLE_CHAD_HOOKS = !ENABLE_CHAD_HOOKS;
+        return Ok(Value::from(ENABLE_CHAD_HOOKS))
     }
 
 }
@@ -174,7 +241,10 @@ pub fn toggle_hooks() {
 #[hook("/proc/dmjit_toggle_call_counts")]
 pub fn toggle_call_counts() {
     unsafe {
-        auxtools::hooks::ENABLE_CALL_COUNTS = !auxtools::hooks::ENABLE_CALL_COUNTS;
-        return Ok(Value::from(auxtools::hooks::ENABLE_CALL_COUNTS))
+        match CALL_COUNT {
+            None => { CALL_COUNT = Option::Some(HashMap::new()) }
+            Some(_) => { CALL_COUNT = Option::None }
+        }
+        return Ok(Value::from(CALL_COUNT.is_some()))
     }
 }
