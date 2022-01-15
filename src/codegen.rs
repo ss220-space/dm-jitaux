@@ -1,19 +1,21 @@
-use inkwell::{IntPredicate, FloatPredicate, AddressSpace};
-use inkwell::context::Context;
-use inkwell::module::{Module, Linkage};
-use inkwell::builder::Builder;
-use inkwell::values::{PointerValue, StructValue, IntValue, BasicValueEnum, FunctionValue, PhiValue};
-use std::collections::HashMap;
-use inkwell::types::StructType;
-use inkwell::execution_engine::ExecutionEngine;
-use inkwell::basic_block::BasicBlock;
-use auxtools::raw_types::values::ValueTag;
-use inkwell::AddressSpace::Generic;
-use std::collections::hash_map::Entry;
-use auxtools::Proc;
-use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use std::borrow::Borrow;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+
+use auxtools::Proc;
+use auxtools::raw_types::values::ValueTag;
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
+use inkwell::AddressSpace::Generic;
 use inkwell::attributes::AttributeLoc;
+use inkwell::basic_block::BasicBlock;
+use inkwell::builder::Builder;
+use inkwell::context::Context;
+use inkwell::execution_engine::ExecutionEngine;
+use inkwell::module::{Linkage, Module};
+use inkwell::types::StructType;
+use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
+
+use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use crate::pads;
 
 pub struct CodeGen<'ctx, 'a> {
@@ -760,6 +762,52 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     ],
                     "set_cache_field"
                 );
+            }
+            DMIR::ValueTagSwitch(location, cases) => {
+                let value = self.emit_read_value_location(location);
+                let meta_value = self.emit_load_meta_value(value);
+                let mut jumps = Vec::new();
+                let mut default = Option::None;
+                for (predicate, block) in cases.as_ref() {
+                    let mut tags = Vec::new();
+                    fn to_linear(predicate: &ValueTagPredicate, out: &mut Vec<ValueTagPredicate>) {
+                        match predicate {
+                            ValueTagPredicate::Union(values) => {
+                                for i in values {
+                                    to_linear(i, out)
+                                }
+                            }
+                            _ => { out.push(predicate.clone()) }
+                        }
+                    }
+                    to_linear(predicate, &mut tags);
+                    if tags.iter().any(|predicate| matches!(predicate, ValueTagPredicate::Any)) {
+                        assert!(matches!(default, Option::None));
+                        let mut block_builder = BlockBuilder {
+                            context: self.context,
+                            builder: &self.builder,
+                            val_type: &self.val_type,
+                            block_map: &mut self.block_map,
+                        };
+                        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, block).block;
+                        default = Option::Some(target)
+                    } else {
+                        for tag in tags {
+                            if let ValueTagPredicate::Tag(t) = tag {
+                                let mut block_builder = BlockBuilder {
+                                    context: self.context,
+                                    builder: &self.builder,
+                                    val_type: &self.val_type,
+                                    block_map: &mut self.block_map,
+                                };
+                                let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, block).block;
+                                jumps.push((self.const_tag(t), target))
+                            }
+                        }
+                    }
+                }
+                self.builder.build_switch(meta_value.tag, default.unwrap(), &jumps);
+                self.block_ended = true;
             }
             // Read two values from stack, add them together, put result to stack
             DMIR::FloatAdd => {

@@ -353,6 +353,12 @@ impl <'t> AnalyzerState<'t> {
                 DMIR::Ret => {
                     block_ended = true;
                 }
+                DMIR::ValueTagSwitch(_, cases) =>{
+                    for (_, block) in cases.as_ref() {
+                        self.merge_presences(pos, block.clone());
+                    }
+                    block_ended = true;
+                }
                 DMIR::JZ(label) | DMIR::JZInternal(label) | DMIR::JNZInternal(label) => {
                     self.merge_presences(pos, label.clone())
                 }
