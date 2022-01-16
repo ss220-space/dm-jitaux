@@ -83,6 +83,8 @@ pub enum ValueLocation {
 }
 
 macro_rules! value_tag_pred {
+    (@any) => ({ ValueTagPredicate::Any });
+    (@nothing) => ({ ValueTagPredicate::Nothing });
     ($tag:expr) => ({ ValueTagPredicate::Tag($tag) });
     (@union $($tag:expr),+) => ({ ValueTagPredicate::Union(vec![$(value_tag_pred!($tag)),+]) });
 }
@@ -239,11 +241,26 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
 
     let mut switch_counter = 0;
 
+    macro_rules! type_switch {
+        (@stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
+            let cases = vec![
+                $((value_tag_pred!($($check)+), $body)),+
+            ];
+            let mut block = Vec::new();
+            decode_switch(ValueLocation::Stack($n), &mut switch_counter, cases, &mut block);
+            block
+        });
+    }
+
     // generate DMIR sequence for each instruction in dm-asm
     for nd in nodes {
         match nd {
             // if node contains instruction
             dmasm::Node::Instruction(insn, data) => {
+                macro_rules! deopt {
+                    () => { DMIR::Deopt(data.offset, proc.id) };
+                    (@type_switch) => ( vec![deopt!(), DMIR::End] );
+                }
                 match insn {
                     // skip debug info for now
                     Instruction::DbgFile(_f) => {}
@@ -255,26 +272,32 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         decode_set_var(&vr, &mut irs)
                     },
                     Instruction::Add => {
-                        let mut float_add_block = Vec::new();
-                        decode_switch(ValueLocation::Stack(0), &mut switch_counter, vec![
-                            (value_tag_pred!(@union ValueTag::Number, ValueTag::Null), vec![DMIR::FloatAdd]),
-                            (ValueTagPredicate::Any, vec![DMIR::Deopt(data.offset, proc.id), DMIR::End]),
-                        ], &mut float_add_block);
-                        decode_switch(ValueLocation::Stack(1), &mut switch_counter, vec![
-                            (ValueTagPredicate::Tag(ValueTag::Number), float_add_block),
-                            (ValueTagPredicate::Any, vec![DMIR::Deopt(data.offset, proc.id), DMIR::End]),
-                        ], &mut irs);
+                        irs.append(
+                            &mut type_switch!(
+                                @stack 1,
+                                (ValueTag::Number) =>
+                                    type_switch!(
+                                        @stack 0,
+                                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatAdd],
+                                        (@any) => deopt!(@type_switch)
+                                    ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
                     }
                     Instruction::Sub => {
-                        let mut float_sub_block = Vec::new();
-                        decode_switch(ValueLocation::Stack(0), &mut switch_counter, vec![
-                            (value_tag_pred!(@union ValueTag::Number, ValueTag::Null), vec![DMIR::FloatSub]),
-                            (ValueTagPredicate::Any, vec![DMIR::Deopt(data.offset, proc.id), DMIR::End]),
-                        ], &mut float_sub_block);
-                        decode_switch(ValueLocation::Stack(1), &mut switch_counter, vec![
-                            (ValueTagPredicate::Tag(ValueTag::Number), float_sub_block),
-                            (ValueTagPredicate::Any, vec![DMIR::Deopt(data.offset, proc.id), DMIR::End]),
-                        ], &mut irs);
+                        irs.append(
+                            &mut type_switch!(
+                                @stack 1,
+                                (ValueTag::Number) =>
+                                    type_switch!(
+                                        @stack 0,
+                                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatSub],
+                                        (@any) => deopt!(@type_switch)
+                                    ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
                     }
                     Instruction::Mul => {
                         irs.push(CheckTypeDeopt(
