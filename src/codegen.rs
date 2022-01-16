@@ -769,7 +769,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let mut jumps = Vec::new();
                 let mut default = Option::None;
                 for (predicate, block) in cases.as_ref() {
-                    let mut tags = Vec::new();
+                    let mut predicates = Vec::new();
                     fn to_linear(predicate: &ValueTagPredicate, out: &mut Vec<ValueTagPredicate>) {
                         match predicate {
                             ValueTagPredicate::Union(values) => {
@@ -780,9 +780,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                             _ => { out.push(predicate.clone()) }
                         }
                     }
-                    to_linear(predicate, &mut tags);
-                    if tags.iter().any(|predicate| matches!(predicate, ValueTagPredicate::Any)) {
-                        assert!(matches!(default, Option::None));
+                    to_linear(predicate, &mut predicates);
+
+                    for predicate in predicates {
                         let mut block_builder = BlockBuilder {
                             context: self.context,
                             builder: &self.builder,
@@ -790,19 +790,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                             block_map: &mut self.block_map,
                         };
                         let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, block).block;
-                        default = Option::Some(target)
-                    } else {
-                        for tag in tags {
-                            if let ValueTagPredicate::Tag(t) = tag {
-                                let mut block_builder = BlockBuilder {
-                                    context: self.context,
-                                    builder: &self.builder,
-                                    val_type: &self.val_type,
-                                    block_map: &mut self.block_map,
-                                };
-                                let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, block).block;
-                                jumps.push((self.const_tag(t), target))
-                            }
+                        if let ValueTagPredicate::Tag(t) = predicate {
+                            jumps.push((self.const_tag(t), target))
+                        } else if matches!(predicate, ValueTagPredicate::Any) {
+                            default = Option::Some(target)
                         }
                     }
                 }
