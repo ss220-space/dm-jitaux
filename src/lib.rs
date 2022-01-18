@@ -158,6 +158,7 @@ pub fn log_init() -> DMResult {
 
     pads::deopt::initialize_deopt();
     pads::debug::init();
+    pads::lists::init();
 
     Value::from_string(format!("dmJIT init success, {}", ver_string!()))
 }

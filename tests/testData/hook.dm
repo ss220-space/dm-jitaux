@@ -56,3 +56,6 @@
 
 /proc/dmjit_dump_deopts()
     DMJIT_NATIVE
+
+/proc/dmjit_print_list_content(list)
+    DMJIT_NATIVE
