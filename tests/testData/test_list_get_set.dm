@@ -27,11 +27,52 @@
     RES(test["test0"]) // RES: 990
     RES(test["test1"]) // RES: 991
     RES(test["test2"]) // RES: 992
-    dmjit_print_list_content(test)
     list_set(test, 1, 250)
-    dmjit_print_list_content(test)
     RES(test["test0"]) // RES:
-    RES(0) // RES: 0
+
+    var/datum/base/dt_local = new
+    var/datum/base/dt_local_two = new
+    var/datum/base/neutral = new
+
+    MARK_REF_COUNT(dt_local)
+    MARK_REF_COUNT(dt_local_two)
+
+    RES(CHECK_LEAK(dt_local)) // RES: OK
+
+    test = list()
+
+    test["a"] = dt_local
+    RES(CHECK_LEAK(dt_local)) // RES: NOT_OK(3 != 4)
+    list_set(test, "a", neutral)
+
+    RES(CHECK_LEAK(dt_local)) // RES: OK
+
+    test = list(neutral)
+
+    list_set(test, "a", dt_local)
+    RES(CHECK_LEAK(dt_local)) // RES: NOT_OK(3 != 4)
+    test["a"] = neutral
+
+    RES(CHECK_LEAK(dt_local)) // RES: OK
+
+    test = list(neutral)
+
+    test[1] = dt_local
+    RES(CHECK_LEAK(dt_local)) // RES: NOT_OK(3 != 4)
+    list_set(test, 1, neutral)
+
+    RES(CHECK_LEAK(dt_local)) // RES: OK
+
+    test = list(neutral)
+
+    list_set(test, 1, dt_local)
+    RES(CHECK_LEAK(dt_local)) // RES: NOT_OK(3 != 4)
+    test[1] = neutral
+
+    RES(CHECK_LEAK(dt_local)) // RES: OK
+
+/datum/base
+    var/dt_next = null
 
 /proc/list_get(a, b)
     return a[b]

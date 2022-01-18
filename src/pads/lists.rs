@@ -1,5 +1,5 @@
-use std::ffi::c_void;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
+use auxtools::raw_types::funcs::dec_ref_count;
 
 use auxtools::raw_types::lists::{AssociativeListEntry, List};
 use auxtools::raw_types::values::{Value, ValueData, ValueTag};
@@ -60,6 +60,7 @@ pub fn list_indexed_set(list: Value, index: i32, value: Value) {
         let list = get_list(list);
         let value_ptr = (*list).vector_part.offset((index - 1) as isize);
         unset_assoc_list(list, *value_ptr);
+        dec_ref_count(*value_ptr);
         *(value_ptr) = value;
     }
 }
