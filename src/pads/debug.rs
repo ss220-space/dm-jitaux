@@ -40,7 +40,7 @@ pub fn get_datum_ref_count(datum: Value) -> u32 {
         log::debug!("datum ptr ptr: {:?}", array_ptr.add(datum.raw.data.id as usize));
         let datum_ptr = *(array_ptr.add(datum.raw.data.id as usize));
         log::debug!("datum ptr: {:?}", datum_ptr);
-        let res = *(datum_ptr.add(0x10) as *mut u32);
+        let res = *(datum_ptr.add(0x18) as *mut u32);
         log::debug!("datum ref count: {}", res);
         return res
     }

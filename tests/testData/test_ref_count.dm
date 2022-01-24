@@ -20,6 +20,10 @@
     MARK_REF_COUNT(dt_local)
     MARK_REF_COUNT(dt_local_two)
 
+    dt_local_two.dt_next = dt_local
+    RES(CHECK_LEAK(dt_local)) // RES: NOT_OK(3 != 4)
+    dt_local_two.dt_next = 1
+
     RES(CHECK_LEAK(dt_local)) // RES: OK
 
     receive_datum(dt_local)
@@ -52,6 +56,7 @@
     RES(CHECK_LEAK(dt_local_two)) // RES: OK
 
     dt_local.unbalanced_if_wrap(TRUE)
+    CLEAR_CACHE_VAR
     RES(CHECK_LEAK(dt_local)) // RES: OK
 
 /datum/base
