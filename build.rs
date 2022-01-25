@@ -17,6 +17,12 @@ fn main() -> Result<()> {
     }
     //println!("cargo:rustc-cfg=debug_on_call_print");
 
+    cc::Build::new()
+        .include("src/")
+        .file("src/sectionMemoryManagerBindings.cpp")
+        .cpp(true)
+        .compile("dmjit-cpp");
+
     let mut child = Command::new("llvm-as")
         .arg("src/runtime.ll")
         .arg("-o")

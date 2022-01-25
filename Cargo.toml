@@ -16,11 +16,12 @@ rayon = "1.5"
 rand = "0.8.3"
 measure_time = "0.6.0"
 dmasm = { git = "https://github.com/ss220-space/dmasm", rev = "709231411c5a7c41a2f40440aea77b9b6552caa1" }
-inkwell = { git = "https://github.com/TheDan64/inkwell", default-features = false, branch = "master", features = ["llvm12-0", "target-x86"] }
-llvm-sys = "120"
+inkwell = { git = "https://github.com/ss220-space/inkwell", branch = "dmjit", default-features = false, features = ["llvm12-0", "target-x86"] }
+llvm-sys = "120.2.2"
 libc = "0.2.97"
 typed-arena = "2.0.1"
 criterion = { version = "0.3.5", optional = true}
+binrw = "0.8.0"
 
 [dev-dependencies]
 test_common = { path = "test_common" }
@@ -28,6 +29,7 @@ test_common = { path = "test_common" }
 [build-dependencies]
 vergen = "5.1.17"
 anyhow = "1.0.47"
+cc = "1.0.72"
 
 [lib]
 crate-type = ["cdylib"]

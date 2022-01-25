@@ -1,6 +1,7 @@
 #![feature(core_intrinsics)]
 #![feature(once_cell)]
 #![feature(asm)]
+#![feature(naked_functions)]
 
 mod compile;
 pub(crate) mod pads;
@@ -21,11 +22,14 @@ mod tools;
 
 #[cfg(feature = "test_utils")]
 mod test_utils;
+pub(crate) mod stack_map;
+mod section_memory_manager_bindings;
 
 
 #[macro_use]
 extern crate auxtools;
 extern crate log;
+extern crate core;
 
 use std::collections::HashMap;
 use auxtools::{hook, CompileTimeHook, StringRef, raw_types, DMResult, Runtime};
