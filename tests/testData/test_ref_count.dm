@@ -21,43 +21,43 @@
     MARK_REF_COUNT(dt_local_two)
 
     dt_local_two.dt_next = dt_local
-    RES(CHECK_LEAK(dt_local)) // RES: NOT_OK(3 != 4)
+    RES_CHECK_LEAK(dt_local) // RES: NOT_OK(3 != 4)
     dt_local_two.dt_next = 1
 
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     receive_datum(dt_local)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     access_datum(dt_local)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     pass_datum(dt_local)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     store_restore_datum(dt_local)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     deopt_ret(dt_local)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     deopt_arg(dt_local)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     dt_local.deopt_src()
     CLEAR_CACHE_VAR
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     dispatch_call_nested(dt_local)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
     dispatch_call_two_arg(dt_local, dt_local_two)
-    RES(CHECK_LEAK(dt_local)) // RES: OK
-    RES(CHECK_LEAK(dt_local_two)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
+    RES_CHECK_LEAK(dt_local_two) // RES: OK
 
     dt_local.unbalanced_if_wrap(TRUE)
     CLEAR_CACHE_VAR
-    RES(CHECK_LEAK(dt_local)) // RES: OK
+    RES_CHECK_LEAK(dt_local) // RES: OK
 
 /datum/base
     var/dt_next = null

@@ -1,8 +1,12 @@
+extern crate core;
+
 use std::process::{Command, ExitStatus};
 use std::fs::File;
 use std::io::Write;
 use std::{io, fs};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
+use itertools::Itertools;
 
 pub struct DMTest<'l> {
     name: &'l str,
@@ -10,6 +14,14 @@ pub struct DMTest<'l> {
     test_data_search_path: Vec<&'l str>,
 }
 
+#[derive(PartialEq)]
+struct PStr<'a>(&'a str);
+
+impl Debug for PStr<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl <'l> DMTest<'l> {
     pub fn new(name: &'l str, work_dir: &'l str, test_data_search_path: Vec<&'l str>) -> Self {
@@ -38,6 +50,43 @@ impl <'l> DMTest<'l> {
         self.run_hook_test(files.clone());
 
         let mut expected_lines: Vec<String> = Vec::new();
+        let mut actual_lines: Vec<String> = Vec::new();
+
+        let test_output_string = self.test_result();
+
+        let output = test_output_string.lines().map(
+            |line| {
+                let split = line.splitn(3, ':').collect::<Vec<&str>>();
+                if let [file, line_str, value] = split.as_slice() {
+                    return (*file, line_str.parse::<u32>().unwrap(), *value)
+                } else {
+                    panic!("Unexpected line in result.txt: {}", line)
+                }
+            }
+        ).group_by(|(file, _, _)| *file);
+        for (file, values) in &output {
+            let str = fs::read_to_string(self.work_dir().join(file)).unwrap();
+            let lines = str.lines().collect::<Vec<_>>();
+            let values_in_file =
+                values.map(|(_, line_number, value)| (line_number, value))
+                .sorted_by_key(|(line_number, _)| *line_number)
+                .group_by(|(line_number, _)| *line_number);
+            for (line_number, values) in &values_in_file {
+                let line = lines[(line_number - 1)  as usize];
+                let res = line.rfind(RES_PREFIX);
+                let prefix_line = if let Some(pos) = res {
+                    &line[..pos]
+                } else {
+                    line
+                };
+                actual_lines.push(
+                    format!("{}{}{}", prefix_line, RES_PREFIX, values.map(|(_, value)| value).join(", "))
+                )
+            }
+        }
+
+
+
         for file in files.iter() {
             let str = fs::read_to_string(self.work_dir().join(file)).unwrap();
             let mut do_test_found = false;
@@ -48,9 +97,8 @@ impl <'l> DMTest<'l> {
 
                 if do_test_found {
                     let pos = line.rfind(RES_PREFIX);
-                    if let Some(pos) = pos {
-                        let text = &line[(pos + RES_PREFIX.len())..];
-                        expected_lines.push(text.trim().to_string());
+                    if let Some(_) = pos {
+                        expected_lines.push(line.trim().to_string());
                     }
                 }
 
@@ -60,7 +108,7 @@ impl <'l> DMTest<'l> {
                 break;
             }
         }
-        assert_eq!(self.test_result().trim(), expected_lines.join("\n"));
+        pretty_assertions::assert_eq!(PStr(actual_lines.iter().map(|s| s.trim()).join("\n").as_str()), PStr(expected_lines.join("\n").as_str()));
     }
 
     pub fn test_result(&self) -> String {
@@ -124,7 +172,7 @@ impl <'l> DMTest<'l> {
 
 }
 
-const RES_PREFIX: &str = "// RES:";
+const RES_PREFIX: &str = "// RES: ";
 
 fn lib_path() -> &'static Path {
     if cfg!(target_os = "windows") {
