@@ -19,8 +19,8 @@
     MARK_REF_COUNT(cell_2)
 
     RES(cell_1.share(cell_2)) // RES: -87.6988
-    RES(CHECK_LEAK(cell_1)) // RES: OK
-    RES(CHECK_LEAK(cell_2)) // RES: OK
+    RES_CHECK_LEAK(cell_1) // RES: OK
+    RES_CHECK_LEAK(cell_2) // RES: OK
 
     RES(cell_1.oxygen) // RES: 28
     cell_1.archive()
@@ -29,8 +29,8 @@
     RES(cell_1.last_share) // RES: 18
 
     RES(cell_1.share(cell_2)) // RES: -52.6193
-    RES(CHECK_LEAK(cell_1)) // RES: OK
-    RES(CHECK_LEAK(cell_2)) // RES: OK
+    RES_CHECK_LEAK(cell_1) // RES: OK
+    RES_CHECK_LEAK(cell_2) // RES: OK
 
     RES(cell_1.last_share) // RES: 10.8
 
