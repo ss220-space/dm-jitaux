@@ -1,6 +1,6 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::collections::HashMap;
-use auxtools::{Proc, Value};
+use auxtools::{DMResult, Proc, Value};
 use dmasm::Instruction;
 use dmasm::format_disassembly;
 use dmasm::operands::Variable;
@@ -40,7 +40,7 @@ pub fn var_desc(v: &Variable) -> String {
 }
 
 #[hook("/proc/dmjit_dump_opcode_count")]
-pub fn dump_opcode_count() {
+pub fn dump_opcode_count() -> DMResult {
     log::info!("[DOC] Dump opcode counts");
     if let Some(mut vec) = call_counts() {
         vec.sort_by_key(|h| h.count);
@@ -88,11 +88,11 @@ pub fn dump_opcode_count() {
             log::info!("[DOC] {}\t{}", count, op);
         }
     }
-    Ok(Value::null())
+    DMResult::Ok(Value::null())
 }
 
 #[hook("/proc/dmjit_dump_opcodes")]
-pub fn dump_opcodes(list: Value) {
+pub fn dump_opcodes(list: Value) -> DMResult {
     if let Ok(name) = list.as_list()?.get(Value::from(1))?.as_string() {
         let mut override_id = 0;
         loop {
@@ -118,16 +118,16 @@ pub fn dump_opcodes(list: Value) {
     } else {
         log::error!("Not a str {}, {}", list, list.to_string()?)
     }
-    Ok(Value::null())
+    DMResult::Ok(Value::null())
 }
 
 #[hook("/proc/dmjit_dump_deopts")]
-fn dump_deopts() {
+fn dump_deopts() -> DMResult {
     DEOPT_COUNT.with(|deopt_data| {
         log::info!("Dump deopt statistics");
         for ((proc_id, offset), count) in deopt_data.borrow().iter() {
             log::info!("{:?} {}@{:X} -- {}", proc_id, Proc::from_id(*proc_id).map_or("_unk".to_string(), |proc| proc.path), offset, count)
         }
     });
-    Ok(Value::null())
+    DMResult::Ok(Value::null())
 }

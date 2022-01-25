@@ -108,7 +108,7 @@ pub fn guard<F: FnOnce() -> DMResult + UnwindSafe>(f: F) -> DMResult {
 }
 
 #[hook("/proc/dmjit_dump_call_count")]
-pub fn dump_call_count() {
+pub fn dump_call_count() -> DMResult {
     log::info!("Dump call count");
     if let Some(mut vec) = call_counts() {
         vec.sort_by_key(|h| -(h.count as i32));
@@ -136,7 +136,7 @@ fn rotate_logs(from: &Path, num: u32) {
 }
 
 #[hook("/proc/dmjit_hook_log_init")]
-pub fn log_init() {
+pub fn log_init() -> DMResult {
     macro_rules! ver_string {
         () => {
             format!("{}-{} built on {}", env!("VERGEN_GIT_SEMVER"), env!("VERGEN_CARGO_PROFILE"), env!("VERGEN_BUILD_TIMESTAMP"))
@@ -230,7 +230,7 @@ pub fn chad_hook_by_id(proc_id: ProcId, hook: ByondProcFunc) {
 
 
 #[hook("/proc/dmjit_toggle_hooks")]
-pub fn toggle_hooks() {
+pub fn toggle_hooks() -> DMResult {
     unsafe {
         ENABLE_CHAD_HOOKS = !ENABLE_CHAD_HOOKS;
         return Ok(Value::from(ENABLE_CHAD_HOOKS))
@@ -239,7 +239,7 @@ pub fn toggle_hooks() {
 }
 
 #[hook("/proc/dmjit_toggle_call_counts")]
-pub fn toggle_call_counts() {
+pub fn toggle_call_counts() -> DMResult {
     unsafe {
         match CALL_COUNT {
             None => { CALL_COUNT = Option::Some(HashMap::new()) }

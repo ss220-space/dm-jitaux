@@ -1,4 +1,5 @@
 use auxtools::{Value, Proc};
+use auxtools::DMResult;
 use dmasm::{format_disassembly};
 use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine};
@@ -19,7 +20,7 @@ use crate::variable_termination_pass::variable_termination_pass;
 use crate::ref_count::generate_ref_count_operations;
 
 #[hook("/proc/dmjit_compile_proc")]
-pub fn compile_and_call(proc_name: auxtools::Value) {
+pub fn compile_and_call(proc_name: auxtools::Value) -> DMResult {
     guard(|| {
         LLVM_CONTEXT.with(|val| {
             let mut override_id = 0;
@@ -54,13 +55,13 @@ pub fn compile_and_call(proc_name: auxtools::Value) {
             }
         });
 
-        Result::Ok(Value::null())
+        DMResult::Ok(Value::null())
     })
 }
 
 
 #[hook("/proc/dmjit_install_compiled")]
-pub fn install_hooks() {
+pub fn install_hooks() -> DMResult {
     guard(|| {
         let mut installed: Vec<String> = vec!();
         LLVM_CONTEXT.with(|val| {

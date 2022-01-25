@@ -5,7 +5,7 @@ use criterion::Criterion;
 static mut HARNESS: Option<Criterion> = Option::None;
 
 #[hook("/proc/dmjit_bench_iterate")]
-fn run_benchmark(group: Value, name: Value) {
+fn run_benchmark(group: Value, name: Value) -> DMResult {
 
     run_benchmark_internal(&group, &name, args)?;
 
@@ -13,7 +13,7 @@ fn run_benchmark(group: Value, name: Value) {
 }
 
 #[hook("/proc/dmjit_bench_init")]
-fn init_benchmark() {
+fn init_benchmark() -> DMResult {
     let harness = Criterion::default()
         .measurement_time(Duration::from_secs(10));
     unsafe { HARNESS = Some(harness); }
@@ -22,7 +22,7 @@ fn init_benchmark() {
 }
 
 #[hook("/proc/dmjit_bench_finish")]
-fn finish_benchmark() {
+fn finish_benchmark() -> DMResult {
     let harness = unsafe { HARNESS.as_mut().unwrap() };
     harness.final_summary();
 
