@@ -12,11 +12,11 @@ use inkwell::context::Context;
 use inkwell::execution_engine::ExecutionEngine;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::{StructType};
-use inkwell::values::{AnyValue, ArrayValue, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
-
+use inkwell::values::{BasicMetadataValueEnum, AnyValue, ArrayValue, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
 
 use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use crate::pads;
+use crate::pads::deopt::DeoptId;
 
 pub struct CodeGen<'ctx, 'a> {
     context: &'ctx Context,
@@ -36,7 +36,8 @@ pub struct CodeGen<'ctx, 'a> {
     block_ended: bool,
     parameter_count: u32,
     local_count: u32,
-    args: Vec<StructValue<'ctx>>
+    args: Vec<StructValue<'ctx>>,
+    deopt_count: u32,
 }
 
 type BlockMap<'ctx> = HashMap<String, LabelBlockInfo<'ctx>>;
@@ -117,7 +118,10 @@ macro_rules! decl_type {
 }
 
 macro_rules! decl_sig {
-    ($code_gen:ident ($($arg:tt),+) -> $result:tt) => (
+    ($code_gen:ident ($($arg:ident),+,...) -> $result:tt) => (
+        decl_type!($code_gen $result).fn_type(&[$(decl_type!($code_gen $arg).into()),+], true)
+    );
+    ($code_gen:ident ($($arg:ident),+) -> $result:tt) => (
         decl_type!($code_gen $result).fn_type(&[$(decl_type!($code_gen $arg).into()),+], false)
     );
 }
@@ -309,7 +313,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             let list_check_size_func_sig = self.context.bool_type().fn_type(&[self.val_type.into(), self.context.i32_type().into()], false);
             let list_check_size_func = self.module.add_function("<intrinsic>/list_check_size", list_check_size_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&list_check_size_func, pads::lists::list_check_size as usize);
-            
+
             /*
               out: *mut auxtools::raw_types::values::Value,
               proc_id: auxtools::raw_types::procs::ProcId,
@@ -326,22 +330,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
               locals_count: u32
              */
             let deopt_func_sig = self.context.void_type().fn_type(&[
-                self.val_type.ptr_type(AddressSpace::Generic).into(),
-                self.context.i32_type().into(),
-                self.context.i8_type().into(),
-                self.context.i32_type().into(),
-                self.context.bool_type().into(),
-                self.val_type.ptr_type(AddressSpace::Generic).into(),
-                self.context.i32_type().into(),
-                self.val_type.into(),
-                self.val_type.into(),
-                self.val_type.ptr_type(AddressSpace::Generic).into(),
-                self.context.i32_type().into(),
-                self.val_type.ptr_type(AddressSpace::Generic).into(),
-                self.context.i32_type().into()
+                self.context.i64_type().into()
             ], false);
             let deopt_func = self.module.add_function(INTRINSIC_DEOPT, deopt_func_sig, Some(Linkage::External));
-            self.execution_engine.add_global_mapping(&deopt_func, pads::deopt::handle_deopt as usize);
+            self.execution_engine.add_global_mapping(&deopt_func, pads::deopt::handle_deopt_entry as usize);
 
 
             {
@@ -434,7 +426,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             block_ended: false,
             parameter_count,
             local_count,
-            args: Vec::new()
+            args: Vec::new(),
+            deopt_count: 0
         }
     }
 
@@ -1429,51 +1422,83 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.block_ended = true;
             }
             DMIR::Deopt(offset, proc_id) => {
-                let out_stack_type = self.val_type.array_type(self.stack_loc.len() as u32);
-                let stack_out_ptr = self.builder.build_alloca(out_stack_type, "out_stack");
-                let mut stack_out_array = out_stack_type.const_zero();
-                for (pos, loc) in self.stack_loc.iter().enumerate() {
-                    stack_out_array = self.builder.build_insert_value(stack_out_array, loc.clone(), pos as u32, "store_value_from_stack").unwrap().into_array_value();
-                }
-                self.builder.build_store(stack_out_ptr, stack_out_array);
 
-                let local_count = self.local_count;
+                let deopt_id = DeoptId::new(*proc_id, self.deopt_count);
+                self.deopt_count += 1;
 
-                let out_locals_type = self.val_type.array_type(local_count as u32);
-                let locals_out_ptr = self.builder.build_alloca(out_locals_type, "out_locals");
-                let mut locals_out_array = out_locals_type.const_zero();
-                for (idx, loc) in &self.locals {
-                    locals_out_array = self.builder.build_insert_value(locals_out_array, loc.clone(), *idx, "store_value_from_local").unwrap().into_array_value();
-                }
-
-                self.builder.build_store(locals_out_ptr, locals_out_array);
+                let insert_stack_map = decl_intrinsic!(self "llvm.experimental.stackmap" (i64_type, i32_type, ...) -> void_type);
 
                 let parameter_count = Proc::from_id(proc_id.clone()).unwrap().parameter_names();
 
-                let args_ptr = self.builder.build_array_alloca(self.val_type, self.context.i32_type().const_int(self.args.len() as u64, false), "args_copy");
-                for (idx, arg) in self.args.iter().enumerate() {
-                    let arg_ptr = unsafe { self.builder.build_in_bounds_gep(args_ptr, &[self.context.i64_type().const_int(idx as u64, false)], "arg_store_gep") };
-                    self.builder.build_store(arg_ptr, *arg);
-                }
-                let args = self.builder.build_pointer_cast(args_ptr, self.val_type.ptr_type(Generic), "args_to_raw_ptr");
+                let offset_const = self.context.i64_type().const_int(*offset as u64, false);
 
+                let src_meta = self.emit_load_meta_value(func.get_nth_param(1).unwrap().into_struct_value());
+                let cache_meta = self.emit_load_meta_value(self.cache.unwrap_or(self.val_type.const_zero()));
+
+                let test_res_u8 = self.builder.build_int_z_extend(
+                    self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)),
+                    self.context.i8_type(),
+                    "test_res_u8"
+                );
+
+                let mut args: Vec<BasicMetadataValueEnum> = Vec::new();
+                args.append(
+                    &mut vec![
+                        self.context.i64_type().const_int(deopt_id.0, false).into(),
+                        self.context.i32_type().const_int(0, false).into(),
+                        // actual stack map:
+                        offset_const.into(),
+                        func.get_nth_param(0).unwrap().into(),
+                        src_meta.tag.into(),
+                        src_meta.data.into(),
+                        test_res_u8.into(),
+                        self.context.i32_type().const_int(parameter_count.len() as u64, false).into(),
+                        self.args.unwrap().into(),
+                        cache_meta.tag.into(),
+                        cache_meta.data.into(),
+                    ]
+                );
+                args.push(
+                    self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into()
+                );
+                for stack_value in &self.stack_loc {
+                    let stack_value_meta = self.emit_load_meta_value(stack_value.clone());
+                    args.push(
+                        stack_value_meta.tag.into()
+                    );
+                    args.push(
+                        stack_value_meta.data.into()
+                    );
+                }
+                args.push(
+                    self.context.i32_type().const_int(self.local_count as u64, false).into()
+                );
+                for id in 0..self.local_count {
+                    let local_value = if let Option::Some(value) = self.locals.get(&id) {
+                        value.clone().into()
+                    } else {
+                        self.val_type.const_zero().into()
+                    };
+
+                    let local_value_meta = self.emit_load_meta_value(local_value);
+                    args.push(
+                        local_value_meta.tag.into()
+                    );
+                    args.push(
+                        local_value_meta.data.into()
+                    );
+                }
+
+                self.builder.build_call(
+                    insert_stack_map,
+                    args.as_slice(),
+                    "stack_map"
+                );
 
                 self.builder.build_call(
                     self.module.get_function(INTRINSIC_DEOPT).unwrap(),
                     &[
-                        func.get_nth_param(0).unwrap().into(), //out: *mut auxtools::raw_types::values::Value,
-                        self.context.i32_type().const_int(proc_id.0 as u64, false).into(), //proc_id: auxtools::raw_types::procs::ProcId,
-                        self.context.i8_type().const_int(2, false).into(), //proc_flags: u8,
-                        self.context.i32_type().const_int(offset.clone() as u64, false).into(), //offset: u32,
-                        self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)).into(), //test_flag: bool,
-                        self.builder.build_pointer_cast(stack_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //stack: *const auxtools::raw_types::values::Value,
-                        self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(), //stack_size: u32,
-                        self.cache.unwrap_or(self.val_type.const_zero()).into(), //cached_datum: auxtools::raw_types::values::Value,
-                        func.get_nth_param(1).unwrap().into(), //src: auxtools::raw_types::values::Value,
-                        args.into(), //args: *const auxtools::raw_types::values::Value,
-                        self.context.i32_type().const_int(parameter_count.len() as u64, false).into(), //args_count: u32,
-                        self.builder.build_pointer_cast(locals_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //locals: *const auxtools::raw_types::values::Value,
-                        self.context.i32_type().const_int(local_count as u64, false).into(), //locals_count: u32
+                        self.context.i64_type().const_int(deopt_id.0, false).into()
                     ],
                     "call_deopt",
                 );
