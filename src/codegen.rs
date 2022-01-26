@@ -13,7 +13,7 @@ use inkwell::context::Context;
 use inkwell::execution_engine::ExecutionEngine;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::StructType;
-use inkwell::values::{BasicValueEnum, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
+use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
 
 use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use crate::pads;
@@ -222,7 +222,26 @@ impl<'ctx> CodeGen<'ctx, '_> {
             let debug_val_func = self.module.add_function("<intrinsic>/debug_val", debug_val_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&debug_val_func, pads::debug::handle_debug_val as usize);
 
+            let list_indexed_get_func_sig = self.val_type.fn_type(&[self.val_type.into(), self.context.i32_type().into()], false);
+            let list_indexed_get_func = self.module.add_function("<intrinsic>/list_indexed_get", list_indexed_get_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_indexed_get_func, pads::lists::list_indexed_get as usize);
 
+            let list_indexed_set_func_sig = self.context.void_type().fn_type(&[self.val_type.into(), self.context.i32_type().into(), self.val_type.into()], false);
+            let list_indexed_set_func = self.module.add_function("<intrinsic>/list_indexed_set", list_indexed_set_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_indexed_set_func, pads::lists::list_indexed_set as usize);
+
+            let list_associative_get_func_sig = self.val_type.fn_type(&[self.val_type.into(), self.val_type.into()], false);
+            let list_associative_get_func = self.module.add_function("<intrinsic>/list_associative_get", list_associative_get_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_associative_get_func, pads::lists::list_associative_get as usize);
+
+            let list_associative_set_func_sig = self.context.void_type().fn_type(&[self.val_type.into(), self.val_type.into(), self.val_type.into()], false);
+            let list_associative_set_func = self.module.add_function("<intrinsic>/list_associative_set", list_associative_set_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_associative_set_func, pads::lists::list_associative_set as usize);
+
+            let list_check_size_func_sig = self.context.bool_type().fn_type(&[self.val_type.into(), self.context.i32_type().into()], false);
+            let list_check_size_func = self.module.add_function("<intrinsic>/list_check_size", list_check_size_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_check_size_func, pads::lists::list_check_size as usize);
+            
             /*
               out: *mut auxtools::raw_types::values::Value,
               proc_id: auxtools::raw_types::procs::ProcId,
@@ -892,6 +911,80 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
                 })
             }
+            DMIR::ListIndexedGet => {
+                let index_struct = self.stack().pop();
+                let list_struct = self.stack().pop();
+
+                let index_meta = self.emit_load_meta_value(index_struct);
+
+
+                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
+
+                let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
+
+                let list_indexed_get = self.module.get_function("<intrinsic>/list_indexed_get").unwrap();
+
+                let result = self.builder.build_call(
+                    list_indexed_get,
+                    &[
+                        list_struct.into(),
+                        index_i32.into()
+                    ], "list_indexed_get").as_any_value_enum().into_struct_value();
+
+                self.stack().push(result);
+            }
+            DMIR::ListIndexedSet => {
+                let index_struct = self.stack().pop();
+                let list_struct = self.stack().pop();
+                let value_struct = self.stack().pop();
+
+                let index_meta = self.emit_load_meta_value(index_struct);
+
+
+                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
+
+                let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
+
+                let list_indexed_set = self.module.get_function("<intrinsic>/list_indexed_set").unwrap();
+
+                self.builder.build_call(
+                    list_indexed_set,
+                    &[
+                        list_struct.into(),
+                        index_i32.into(),
+                        value_struct.into()
+                    ], "list_indexed_set");
+            }
+            DMIR::ListAssociativeGet => {
+                let index_struct = self.stack().pop();
+                let list_struct = self.stack().pop();
+
+                let list_indexed_get = self.module.get_function("<intrinsic>/list_associative_get").unwrap();
+
+                let result = self.builder.build_call(
+                    list_indexed_get,
+                    &[
+                        list_struct.into(),
+                        index_struct.into()
+                    ], "list_associative_get").as_any_value_enum().into_struct_value();
+
+                self.stack().push(result);
+            }
+            DMIR::ListAssociativeSet => {
+                let index_struct = self.stack().pop();
+                let list_struct = self.stack().pop();
+                let value_struct = self.stack().pop();
+
+                let list_indexed_set = self.module.get_function("<intrinsic>/list_associative_set").unwrap();
+
+                self.builder.build_call(
+                    list_indexed_set,
+                    &[
+                        list_struct.into(),
+                        index_struct.into(),
+                        value_struct.into()
+                    ], "list_associative_set");
+            }
             DMIR::CallProcById(proc_id, proc_call_type, arg_count) => {
                 let src = self.stack().pop();
 
@@ -1227,6 +1320,45 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 if cfg!(debug_deopt_print) {
                     self.dbg(format!("CheckType({}, {:?}, {:?}) failed: ", stack_pos, predicate, deopt).as_str());
                     self.dbg_val(stack_value);
+                }
+                self.emit(deopt.borrow(), func);
+                self.builder.build_unconditional_branch(next_block);
+
+                self.builder.position_at_end(next_block);
+            }
+            DMIR::ListCheckSizeDeopt(list, index, deopt) =>{
+                let list_struct = self.emit_read_value_location(list);
+                let index_struct = self.emit_read_value_location(index);
+
+                let index_meta = self.emit_load_meta_value(index_struct);
+
+
+                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
+
+                let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
+
+                let list_check_size = self.module.get_function("<intrinsic>/list_check_size").unwrap();
+
+                let result = self.builder.build_call(
+                    list_check_size,
+                    &[
+                        list_struct.into(),
+                        index_i32.into()
+                    ], "list_check_size").as_any_value_enum().into_int_value();
+
+                let next_block = self.context.append_basic_block(func, "next");
+                let deopt_block = self.context.append_basic_block(func, "deopt");
+
+                self.builder.build_conditional_branch(
+                    result,
+                    next_block,
+                    deopt_block,
+                );
+
+                self.builder.position_at_end(deopt_block);
+                if cfg!(debug_deopt_print) {
+                    self.dbg(format!("CheckListSize({:?}, {:?}, {:?}) failed: ", list, index, deopt).as_str());
+                    self.dbg_val(list_struct);
                 }
                 self.emit(deopt.borrow(), func);
                 self.builder.build_unconditional_branch(next_block);

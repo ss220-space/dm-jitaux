@@ -30,6 +30,11 @@ pub enum DMIR {
     FloatCmp(inkwell::FloatPredicate),
     FloatAbs,
     RoundN,
+    ListCheckSizeDeopt(ValueLocation, ValueLocation, Box<DMIR>),
+    ListIndexedGet,
+    ListIndexedSet,
+    ListAssociativeGet,
+    ListAssociativeSet,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
     PushTestFlag, // Push test flag value as Number
@@ -335,6 +340,34 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::Abs => {
                         irs.push(DMIR::FloatAbs)
+                    }
+                    Instruction::ListGet => {
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(ValueTag::List),
+                            Box::new(DMIR::Deopt(data.offset, proc.id))
+                        ));
+                        irs.append(
+                            &mut type_switch!(
+                                @stack 0,
+                                (ValueTag::Number) => vec![DMIR::ListCheckSizeDeopt(ValueLocation::Stack(1), ValueLocation::Stack(0), Box::new(DMIR::Deopt(data.offset, proc.id))), DMIR::ListIndexedGet],
+                                (@any) => vec![DMIR::ListAssociativeGet]
+                            )
+                        );
+                    }
+                    Instruction::ListSet => {
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(ValueTag::List),
+                            Box::new(DMIR::Deopt(data.offset, proc.id))
+                        ));
+                        irs.append(
+                            &mut type_switch!(
+                                @stack 0,
+                                (ValueTag::Number) => vec![DMIR::ListCheckSizeDeopt(ValueLocation::Stack(1), ValueLocation::Stack(0), Box::new(DMIR::Deopt(data.offset, proc.id))), DMIR::ListIndexedSet],
+                                (@any) => vec![DMIR::ListAssociativeSet]
+                            )
+                        );
                     }
                     Instruction::CallGlob(arg_count, callee) => {
                         match callee.path.as_ref() {
