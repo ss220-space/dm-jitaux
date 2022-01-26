@@ -918,7 +918,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let index_meta = self.emit_load_meta_value(index_struct);
 
 
-                let index_f32 = self.emit_to_number_or_zero(func, index_meta).data.into_float_value();
+                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
 
                 let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
 
@@ -941,7 +941,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let index_meta = self.emit_load_meta_value(index_struct);
 
 
-                let index_f32 = self.emit_to_number_or_zero(func, index_meta).data.into_float_value();
+                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
 
                 let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
 
@@ -966,7 +966,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     &[
                         list_struct.into(),
                         index_struct.into()
-                    ], "list_indexed_get").as_any_value_enum().into_struct_value();
+                    ], "list_associative_get").as_any_value_enum().into_struct_value();
 
                 self.stack().push(result);
             }
@@ -983,7 +983,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         list_struct.into(),
                         index_struct.into(),
                         value_struct.into()
-                    ], "list_indexed_set");
+                    ], "list_associative_set");
             }
             DMIR::CallProcById(proc_id, proc_call_type, arg_count) => {
                 let src = self.stack().pop();
@@ -1333,7 +1333,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let index_meta = self.emit_load_meta_value(index_struct);
 
 
-                let index_f32 = self.emit_to_number_or_zero(func, index_meta).data.into_float_value();
+                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
 
                 let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
 
