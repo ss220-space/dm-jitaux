@@ -226,6 +226,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
             let list_copy_func = self.module.add_function("<intrinsic>/list_copy", list_copy_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&list_copy_func, pads::lists::list_copy as usize);
 
+            let list_remove_func_sig = self.context.void_type().fn_type(&[self.val_type.into(), self.val_type.into()], false);
+            let list_remove_func = self.module.add_function("<intrinsic>/list_remove", list_remove_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_remove_func, pads::lists::list_remove as usize);
+
             let list_append_func_sig = self.context.void_type().fn_type(&[self.val_type.into(), self.val_type.into()], false);
             let list_append_func = self.module.add_function("<intrinsic>/list_append", list_append_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&list_append_func, pads::lists::list_append as usize);
@@ -944,6 +948,19 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         list_struct.into(),
                         value_struct.into()
                     ], "list_append");
+            }
+            DMIR::ListSubSingle => {
+                let value_struct = self.stack().pop();
+                let list_struct = self.stack().pop();
+
+                let list_remove = self.module.get_function("<intrinsic>/list_remove").unwrap();
+
+                self.builder.build_call(
+                    list_remove,
+                    &[
+                        list_struct.into(),
+                        value_struct.into()
+                    ], "list_remove");
             }
             DMIR::ListIndexedGet => {
                 let index_struct = self.stack().pop();

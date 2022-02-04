@@ -33,6 +33,7 @@ pub enum DMIR {
     ListCheckSizeDeopt(ValueLocation, ValueLocation, Box<DMIR>),
     ListCopy,
     ListAddSingle,
+    ListSubSingle,
     ListIndexedGet,
     ListIndexedSet,
     ListAssociativeGet,
@@ -90,7 +91,7 @@ pub enum ValueLocation {
 }
 
 macro_rules! type_switch {
-    (@switch_counter $s:expr, @stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
+    (@switch_counter $s:ident, @stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
         let cases = vec![
             $((value_tag_pred!($($check)+), $body)),+
         ];
@@ -256,18 +257,17 @@ fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, s
             out.append(&mut type_switch!(
                     @switch_counter switch_counter,
                     @stack 1,
-                    (ValueTag::Number) =>
-                    type_switch!(
+                    (ValueTag::Number) => type_switch!(
                         @switch_counter switch_counter,
                         @stack 0,
                         (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatAdd],
                         (@any) => deopt!()
                     ),
-                    (ValueTag::List) =>
-                    type_switch!(
+                    (ValueTag::List) => type_switch!(
                         @switch_counter switch_counter,
                         @stack 0,
-                        (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) => vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListAddSingle],
+                        (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
+                            vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListAddSingle],
                         (@any) => deopt!()
                     ),
                     (@any) => deopt!()
@@ -278,13 +278,19 @@ fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, s
             out.append(&mut type_switch!(
                     @switch_counter switch_counter,
                     @stack 1,
-                    (ValueTag::Number) =>
-                        type_switch!(
-                            @switch_counter switch_counter,
-                            @stack 0,
-                            (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatSub],
-                            (@any) => deopt!()
-                        ),
+                    (ValueTag::Number) => type_switch!(
+                        @switch_counter switch_counter,
+                        @stack 0,
+                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatSub],
+                        (@any) => deopt!()
+                    ),
+                    (ValueTag::List) => type_switch!(
+                        @switch_counter switch_counter,
+                        @stack 0,
+                        (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
+                            vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListSubSingle],
+                        (@any) => deopt!()
+                    ),
                     (@any) => deopt!()
                 )
             );
@@ -307,7 +313,8 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
 
     macro_rules! build_type_switch {
         (@stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
-            type_switch!(@switch_counter &mut switch_counter, @stack $n, $(($($check)+) => $body),+)
+            let s = &mut switch_counter;
+            type_switch!(@switch_counter s, @stack $n, $(($($check)+) => $body),+)
         });
     }
 
@@ -428,10 +435,10 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::Test => {
                         irs.push(DMIR::Test)
                     }
-                    Instruction::Jz(lbl) => {
+                    Instruction::Jz(lbl) | Instruction::JzLoop(lbl) => {
                         irs.push(DMIR::JZ(lbl.0))
                     }
-                    Instruction::Jmp(lbl) => {
+                    Instruction::Jmp(lbl) | Instruction::JmpLoop(lbl) => {
                         irs.push(DMIR::Jmp(lbl.0));
                         block_ended = true;
                     }

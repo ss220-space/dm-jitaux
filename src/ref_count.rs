@@ -360,7 +360,7 @@ impl<'t> Analyzer<'t> {
                     @move_in @stack
                 );
             }
-            DMIR::ListAddSingle => {
+            DMIR::ListAddSingle | DMIR::ListSubSingle => {
                 op_effect!(
                     @consume @stack,
                     @consume @stack

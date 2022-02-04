@@ -1,6 +1,6 @@
 use std::ptr::null_mut;
 
-use auxtools::raw_types::funcs::{append_to_list, dec_ref_count};
+use auxtools::raw_types::funcs::{append_to_list, dec_ref_count, remove_from_list};
 use auxtools::raw_types::lists::{AssociativeListEntry, List};
 use auxtools::raw_types::values::{Value, ValueData, ValueTag};
 use auxtools::sigscan;
@@ -58,6 +58,12 @@ pub fn list_copy(list: Value) -> Value {
 pub fn list_append(list: Value, value: Value) {
     unsafe {
         append_to_list(list, value);
+    }
+}
+
+pub fn list_remove(list: Value, value: Value) {
+    unsafe {
+        remove_from_list(list, value);
     }
 }
 
