@@ -435,10 +435,10 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::Test => {
                         irs.push(DMIR::Test)
                     }
-                    Instruction::Jz(lbl) | Instruction::JzLoop(lbl) => {
+                    Instruction::Jz(lbl) => {
                         irs.push(DMIR::JZ(lbl.0))
                     }
-                    Instruction::Jmp(lbl) | Instruction::JmpLoop(lbl) => {
+                    Instruction::Jmp(lbl) => {
                         irs.push(DMIR::Jmp(lbl.0));
                         block_ended = true;
                     }
