@@ -42,3 +42,4 @@ test_dm!(test_call_args);
 test_dm!(test_round);
 test_dm!(test_gas_mixture_share + "gas_mixture.dm");
 test_dm!(test_list_get_set);
+test_dm!(test_list_binary_ops);

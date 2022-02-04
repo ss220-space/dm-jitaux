@@ -222,6 +222,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
             let debug_val_func = self.module.add_function("<intrinsic>/debug_val", debug_val_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&debug_val_func, pads::debug::handle_debug_val as usize);
 
+            let list_copy_func_sig = self.val_type.fn_type(&[self.val_type.into()], false);
+            let list_copy_func = self.module.add_function("<intrinsic>/list_copy", list_copy_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_copy_func, pads::lists::list_copy as usize);
+
+            let list_remove_func_sig = self.context.void_type().fn_type(&[self.val_type.into(), self.val_type.into()], false);
+            let list_remove_func = self.module.add_function("<intrinsic>/list_remove", list_remove_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_remove_func, pads::lists::list_remove as usize);
+
+            let list_append_func_sig = self.context.void_type().fn_type(&[self.val_type.into(), self.val_type.into()], false);
+            let list_append_func = self.module.add_function("<intrinsic>/list_append", list_append_func_sig, Some(Linkage::External));
+            self.execution_engine.add_global_mapping(&list_append_func, pads::lists::list_append as usize);
+
             let list_indexed_get_func_sig = self.val_type.fn_type(&[self.val_type.into(), self.context.i32_type().into()], false);
             let list_indexed_get_func = self.module.add_function("<intrinsic>/list_indexed_get", list_indexed_get_func_sig, Some(Linkage::External));
             self.execution_engine.add_global_mapping(&list_indexed_get_func, pads::lists::list_indexed_get as usize);
@@ -910,6 +922,45 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                     MetaValue::with_tag(ValueTag::Number, result_i32.into(), code_gen)
                 })
+            }
+            DMIR::ListCopy => {
+                let list_struct = self.stack().pop();
+
+                let list_copy = self.module.get_function("<intrinsic>/list_copy").unwrap();
+
+                let result = self.builder.build_call(
+                    list_copy,
+                    &[
+                        list_struct.into()
+                    ], "list_copy").as_any_value_enum().into_struct_value();
+
+                self.stack().push(result);
+            }
+            DMIR::ListAddSingle => {
+                let value_struct = self.stack().pop();
+                let list_struct = self.stack().pop();
+
+                let list_append = self.module.get_function("<intrinsic>/list_append").unwrap();
+
+                self.builder.build_call(
+                    list_append,
+                    &[
+                        list_struct.into(),
+                        value_struct.into()
+                    ], "list_append");
+            }
+            DMIR::ListSubSingle => {
+                let value_struct = self.stack().pop();
+                let list_struct = self.stack().pop();
+
+                let list_remove = self.module.get_function("<intrinsic>/list_remove").unwrap();
+
+                self.builder.build_call(
+                    list_remove,
+                    &[
+                        list_struct.into(),
+                        value_struct.into()
+                    ], "list_remove");
             }
             DMIR::ListIndexedGet => {
                 let index_struct = self.stack().pop();

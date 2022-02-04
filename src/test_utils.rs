@@ -9,9 +9,9 @@ pub fn exit_test() {
     exit(0);
 }
 
-#[hook("/proc/dmjit_get_datum_ref_count")]
-pub fn get_datum_ref_count(arg: Value) -> DMResult {
-    return DMResult::Ok(Value::from(pads::debug::get_datum_ref_count(arg.clone())))
+#[hook("/proc/dmjit_get_ref_count")]
+pub fn get_ref_count(arg: Value) -> DMResult {
+    return DMResult::Ok(Value::from(pads::debug::get_ref_count(arg.clone())))
 }
 
 #[hook("/proc/dmjit_print_list_content")]

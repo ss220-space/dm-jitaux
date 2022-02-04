@@ -45,7 +45,7 @@
 /proc/dmjit_toggle_call_counts()
     DMJIT_NATIVE
 
-/proc/dmjit_get_datum_ref_count(arg)
+/proc/dmjit_get_ref_count(arg)
     DMJIT_NATIVE
 
 /proc/dmjit_mark_time(name)

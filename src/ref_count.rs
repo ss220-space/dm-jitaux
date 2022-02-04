@@ -354,6 +354,18 @@ impl<'t> Analyzer<'t> {
             DMIR::Pop => {
                 op_effect!(@consume @stack);
             }
+            DMIR::ListCopy => {
+                op_effect!(
+                    @consume @stack,
+                    @move_in @stack
+                );
+            }
+            DMIR::ListAddSingle | DMIR::ListSubSingle => {
+                op_effect!(
+                    @consume @stack,
+                    @consume @stack
+                );
+            }
             DMIR::ListAssociativeGet | DMIR::ListIndexedGet => {
                 op_effect!(
                     @consume @stack,
