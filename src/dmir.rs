@@ -29,6 +29,8 @@ pub enum DMIR {
     FloatDiv,
     FloatCmp(inkwell::FloatPredicate),
     FloatAbs,
+    FloatInc,
+    FloatDec,
     RoundN,
     ListCheckSizeDeopt(ValueLocation, ValueLocation, Box<DMIR>),
     ListCopy,
@@ -490,6 +492,24 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         decode_binary_instruction(Instruction::Sub, &data, &proc, &mut switch_counter, &mut block);
                         decode_aug_instruction(&var, &mut block, &mut irs)
                     }
+                    Instruction::Inc(var) => {
+                        decode_get_var(&var, &mut irs);
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Datum) => deopt!(@type_switch),
+                            (@any) => vec![DMIR::FloatInc]
+                        ));
+                        decode_set_var(&var, &mut irs);
+                    }
+                    Instruction::Dec(var) => {
+                        decode_get_var(&var, &mut irs);
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Datum) => deopt!(@type_switch),
+                            (@any) => vec![DMIR::FloatDec]
+                        ));
+                        decode_set_var(&var, &mut irs);
+                    }
                     Instruction::IsNull => {
                         irs.push(DMIR::IsNull)
                     }
@@ -523,7 +543,7 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         ));
                     }
                     Instruction::PopN(count) => {
-                        for i in 0..count {
+                        for _i in 0..count {
                             irs.push(DMIR::Pop)
                         }
                     }

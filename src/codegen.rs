@@ -946,6 +946,36 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let result_value = self.emit_store_meta_value(meta_result);
                 self.stack().push(result_value);
             }
+            DMIR::FloatInc => {
+                let arg_value = self.stack().pop();
+                let arg = self.emit_load_meta_value(arg_value);
+                let arg_num = self.emit_to_number_or_zero(func, arg);
+
+                let one_const = self.context.f32_type().const_float(1.0);
+
+                let result_value = self.builder.build_float_add(arg_num, one_const, "add");
+
+                let result_i32 = self.builder.build_bitcast(result_value, self.context.i32_type(), "result_i32").into_int_value();
+
+                let meta_result = MetaValue::with_tag(ValueTag::Number, result_i32.into(), self);
+                let result_value = self.emit_store_meta_value(meta_result);
+                self.stack().push(result_value);
+            }
+            DMIR::FloatDec => {
+                let arg_value = self.stack().pop();
+                let arg = self.emit_load_meta_value(arg_value);
+                let arg_num = self.emit_to_number_or_zero(func, arg);
+
+                let one_const = self.context.f32_type().const_float(1.0);
+
+                let result_value = self.builder.build_float_sub(arg_num, one_const, "add");
+
+                let result_i32 = self.builder.build_bitcast(result_value, self.context.i32_type(), "result_i32").into_int_value();
+
+                let meta_result = MetaValue::with_tag(ValueTag::Number, result_i32.into(), self);
+                let result_value = self.emit_store_meta_value(meta_result);
+                self.stack().push(result_value);
+            }
             DMIR::RoundN => {
                 self.emit_bin_op(|first, second, code_gen| {
                     let first_f32 = code_gen.emit_to_number_or_zero(func, first.clone());

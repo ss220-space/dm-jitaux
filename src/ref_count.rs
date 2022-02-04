@@ -342,6 +342,12 @@ impl<'t> Analyzer<'t> {
                     @produce_uncounted @stack
                 );
             }
+            DMIR::FloatInc | DMIR::FloatDec => {
+                op_effect!(
+                    @consume @stack,
+                    @produce_uncounted @stack
+                );
+            }
             DMIR::PushInt(_) => {
                 op_effect!(@produce_uncounted @stack);
             }
