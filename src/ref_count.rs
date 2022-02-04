@@ -357,7 +357,7 @@ impl<'t> Analyzer<'t> {
             DMIR::ListCopy => {
                 op_effect!(
                     @consume @stack,
-                    @produce_uncounted @stack
+                    @move_in @stack
                 );
             }
             DMIR::ListAddSingle => {
