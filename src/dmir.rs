@@ -31,6 +31,8 @@ pub enum DMIR {
     FloatAbs,
     RoundN,
     ListCheckSizeDeopt(ValueLocation, ValueLocation, Box<DMIR>),
+    ListCopy,
+    ListAddSingle,
     ListIndexedGet,
     ListIndexedSet,
     ListAssociativeGet,
@@ -85,6 +87,17 @@ pub enum ValueLocation {
     Stack(u8),
     Cache,
     Local(u32)
+}
+
+macro_rules! type_switch {
+    (@switch_counter $s:expr, @stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
+        let cases = vec![
+            $((value_tag_pred!($($check)+), $body)),+
+        ];
+        let mut block = Vec::new();
+        decode_switch(ValueLocation::Stack($n), $s, cases, &mut block);
+        block
+    });
 }
 
 macro_rules! value_tag_pred {
@@ -206,10 +219,10 @@ fn build_float_bin_op_deopt(action: DMIR, data: &DebugData, proc: &Proc, out: &m
     out.push(action);
 }
 
-fn decode_float_aug_instruction(var: &Variable, action: DMIR, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
+fn decode_aug_instruction(var: &Variable, action: &mut Vec<DMIR>, out: &mut Vec<DMIR>) {
     decode_get_var(var, out);
     out.push(DMIR::Swap);
-    build_float_bin_op_deopt(action, data, proc, out);
+    out.append(action);
     decode_set_var(var, out);
 }
 
@@ -234,6 +247,52 @@ fn decode_switch(value: ValueLocation, switch_id: &mut u32, cases: Vec<(ValueTag
     *switch_id += 1;
 }
 
+fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, switch_counter: &mut u32, out: &mut Vec<DMIR>) {
+    macro_rules! deopt {
+        () => ( vec![DMIR::Deopt(data.offset, proc.id), DMIR::End] );
+    }
+    match insn {
+        Instruction::Add => {
+            out.append(&mut type_switch!(
+                    @switch_counter switch_counter,
+                    @stack 1,
+                    (ValueTag::Number) =>
+                    type_switch!(
+                        @switch_counter switch_counter,
+                        @stack 0,
+                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatAdd],
+                        (@any) => deopt!()
+                    ),
+                    (ValueTag::List) =>
+                    type_switch!(
+                        @switch_counter switch_counter,
+                        @stack 0,
+                        (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) => vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListAddSingle],
+                        (@any) => deopt!()
+                    ),
+                    (@any) => deopt!()
+                )
+            );
+        }
+        Instruction::Sub => {
+            out.append(&mut type_switch!(
+                    @switch_counter switch_counter,
+                    @stack 1,
+                    (ValueTag::Number) =>
+                        type_switch!(
+                            @switch_counter switch_counter,
+                            @stack 0,
+                            (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatSub],
+                            (@any) => deopt!()
+                        ),
+                    (@any) => deopt!()
+                )
+            );
+        }
+        _ => {}
+    }
+}
+
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
     // output for intermediate operations sequence
     let mut irs = vec![];
@@ -246,14 +305,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
 
     let mut switch_counter = 0;
 
-    macro_rules! type_switch {
+    macro_rules! build_type_switch {
         (@stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
-            let cases = vec![
-                $((value_tag_pred!($($check)+), $body)),+
-            ];
-            let mut block = Vec::new();
-            decode_switch(ValueLocation::Stack($n), &mut switch_counter, cases, &mut block);
-            block
+            type_switch!(@switch_counter &mut switch_counter, @stack $n, $(($($check)+) => $body),+)
         });
     }
 
@@ -263,8 +317,8 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
             // if node contains instruction
             dmasm::Node::Instruction(insn, data) => {
                 macro_rules! deopt {
-                    () => { DMIR::Deopt(data.offset, proc.id) };
-                    (@type_switch) => ( vec![deopt!(), DMIR::End] );
+                    () => { Box::new(DMIR::Deopt(data.offset, proc.id)) };
+                    (@type_switch) => ( vec![DMIR::Deopt(data.offset, proc.id), DMIR::End] );
                 }
                 match insn {
                     // skip debug info for now
@@ -275,40 +329,15 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::SetVar(vr) => {
                         decode_set_var(&vr, &mut irs)
-                    },
-                    Instruction::Add => {
-                        irs.append(
-                            &mut type_switch!(
-                                @stack 1,
-                                (ValueTag::Number) =>
-                                    type_switch!(
-                                        @stack 0,
-                                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatAdd],
-                                        (@any) => deopt!(@type_switch)
-                                    ),
-                                (@any) => deopt!(@type_switch)
-                            )
-                        );
                     }
-                    Instruction::Sub => {
-                        irs.append(
-                            &mut type_switch!(
-                                @stack 1,
-                                (ValueTag::Number) =>
-                                    type_switch!(
-                                        @stack 0,
-                                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatSub],
-                                        (@any) => deopt!(@type_switch)
-                                    ),
-                                (@any) => deopt!(@type_switch)
-                            )
-                        );
+                    Instruction::Add | Instruction::Sub => {
+                        decode_binary_instruction(insn, &data, &proc, &mut switch_counter, &mut irs)
                     }
                     Instruction::Mul => {
                         irs.push(CheckTypeDeopt(
                             1,
                             value_tag_pred!(ValueTag::Number),
-                            Box::new(DMIR::Deopt(data.offset, proc.id))
+                            deopt!()
                         ));
                         irs.push(DMIR::FloatMul);
                     }
@@ -345,12 +374,12 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(CheckTypeDeopt(
                             1,
                             value_tag_pred!(ValueTag::List),
-                            Box::new(DMIR::Deopt(data.offset, proc.id))
+                            deopt!()
                         ));
                         irs.append(
-                            &mut type_switch!(
+                            &mut build_type_switch!(
                                 @stack 0,
-                                (ValueTag::Number) => vec![DMIR::ListCheckSizeDeopt(ValueLocation::Stack(1), ValueLocation::Stack(0), Box::new(DMIR::Deopt(data.offset, proc.id))), DMIR::ListIndexedGet],
+                                (ValueTag::Number) => vec![DMIR::ListCheckSizeDeopt(ValueLocation::Stack(1), ValueLocation::Stack(0), deopt!()), DMIR::ListIndexedGet],
                                 (@any) => vec![DMIR::ListAssociativeGet]
                             )
                         );
@@ -359,12 +388,12 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(CheckTypeDeopt(
                             1,
                             value_tag_pred!(ValueTag::List),
-                            Box::new(DMIR::Deopt(data.offset, proc.id))
+                            deopt!()
                         ));
                         irs.append(
-                            &mut type_switch!(
+                            &mut build_type_switch!(
                                 @stack 0,
-                                (ValueTag::Number) => vec![DMIR::ListCheckSizeDeopt(ValueLocation::Stack(1), ValueLocation::Stack(0), Box::new(DMIR::Deopt(data.offset, proc.id))), DMIR::ListIndexedSet],
+                                (ValueTag::Number) => vec![DMIR::ListCheckSizeDeopt(ValueLocation::Stack(1), ValueLocation::Stack(0), deopt!()), DMIR::ListIndexedSet],
                                 (@any) => vec![DMIR::ListAssociativeSet]
                             )
                         );
@@ -442,10 +471,14 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::Pop)
                     }
                     Instruction::AugAdd(var) => {
-                        decode_float_aug_instruction(&var, DMIR::FloatAdd, &data, &proc, &mut irs)
+                        let mut block = Vec::new();
+                        decode_binary_instruction(Instruction::Add, &data, &proc, &mut switch_counter, &mut block);
+                        decode_aug_instruction(&var, &mut block, &mut irs)
                     }
                     Instruction::AugSub(var) => {
-                        decode_float_aug_instruction(&var, DMIR::FloatSub, &data, &proc, &mut irs)
+                        let mut block = Vec::new();
+                        decode_binary_instruction(Instruction::Sub, &data, &proc, &mut switch_counter, &mut block);
+                        decode_aug_instruction(&var, &mut block, &mut irs)
                     }
                     Instruction::IsNull => {
                         irs.push(DMIR::IsNull)
