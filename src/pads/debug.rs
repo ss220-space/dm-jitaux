@@ -32,7 +32,7 @@ pub fn init() {
     }
 }
 
-pub fn get_datum_ref_count(value: Value) -> u32 {
+pub fn get_ref_count(value: Value) -> u32 {
     unsafe {
         log::debug!("{:?}", value.raw.tag);
         log::debug!("{:?}", value);
