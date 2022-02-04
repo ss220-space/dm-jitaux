@@ -38,6 +38,7 @@ use log::LevelFilter;
 use std::panic::{UnwindSafe, catch_unwind};
 use std::path::Path;
 use auxtools::raw_types::procs::ProcId;
+use inkwell::execution_engine::ExecutionEngine;
 
 
 pub struct DisassembleEnv;
@@ -137,6 +138,10 @@ fn rotate_logs(from: &Path, num: u32) {
 
 #[hook("/proc/dmjit_hook_log_init")]
 pub fn log_init() -> DMResult {
+
+    // Do not remove, will break lto
+    ExecutionEngine::link_in_mc_jit();
+
     macro_rules! ver_string {
         () => {
             format!("{}-{} built on {}", env!("VERGEN_GIT_SEMVER"), env!("VERGEN_CARGO_PROFILE"), env!("VERGEN_BUILD_TIMESTAMP"))
