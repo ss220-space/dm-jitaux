@@ -493,6 +493,40 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::IsNull => {
                         irs.push(DMIR::IsNull)
                     }
+                    Instruction::Check2Numbers => {
+                        irs.push(CheckTypeDeopt(
+                            0,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                    }
+                    Instruction::Check3Numbers => {
+                        irs.push(CheckTypeDeopt(
+                            0,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                        irs.push(CheckTypeDeopt(
+                            2,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                    }
+                    Instruction::PopN(count) => {
+                        for i in 0..count {
+                            irs.push(DMIR::Pop)
+                        }
+                    }
                     _ => {
                         log::info!("Unsupported insn {}", insn);
                         supported = false;
