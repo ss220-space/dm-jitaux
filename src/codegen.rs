@@ -27,6 +27,7 @@ pub struct CodeGen<'ctx, 'a> {
     locals: HashMap<u32, StructValue<'ctx>>,
     cache: Option<StructValue<'ctx>>,
     val_type: StructType<'ctx>,
+    loop_iter_counter: IntValue<'ctx>,
     test_res: Option<IntValue<'ctx>>,
     internal_test_flag: Option<IntValue<'ctx>>,
     block_map: BlockMap<'ctx>,
@@ -52,6 +53,7 @@ struct LabelBlockInfo<'ctx> {
     block: BasicBlock<'ctx>,
     phi: Vec<PhiValue<'ctx>>,
     cache_phi: Option<PhiValue<'ctx>>,
+    loop_iter_counter_phi: PhiValue<'ctx>,
     locals_phi: HashMap<u32, PhiValue<'ctx>>
 }
 
@@ -144,6 +146,7 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
         stack_loc: &Vec<StructValue<'ctx>>,
         locals: &HashMap<u32, StructValue<'ctx>>,
         cache_data: &Option<StructValue<'ctx>>,
+        loop_iter_counter: &IntValue<'ctx>,
         func: FunctionValue<'ctx>,
         lbl: &String
     ) -> &'a LabelBlockInfo<'ctx> {
@@ -178,6 +181,8 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
                     Option::None
                 };
 
+                let loop_iter_counter_phi = builder.build_phi(self.context.i32_type().clone(), "loop_iter_counter_phi");
+
                 builder.position_at_end(current_block);
 
 
@@ -187,6 +192,7 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
                         block: new_block,
                         phi,
                         locals_phi,
+                        loop_iter_counter_phi,
                         cache_phi
                     };
                 v.insert(target_info)
@@ -205,8 +211,10 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
         }
 
         if let Some(cache) = cache_data {
-            label_block_info.cache_phi.unwrap().add_incoming(&[(cache, current_block)])
+            label_block_info.cache_phi.unwrap().add_incoming(&[(cache, current_block)]);
         }
+
+        label_block_info.loop_iter_counter_phi.add_incoming(&[(loop_iter_counter, current_block)]);
 
 
         label_block_info
@@ -403,6 +411,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             locals: HashMap::new(),
             cache: None,
             val_type,
+            loop_iter_counter: context.i32_type().const_int(0xFFFFF, false),
             test_res: None,
             internal_test_flag: None,
             block_map: HashMap::new(),
@@ -627,7 +636,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             val_type: &self.val_type,
             block_map: &mut self.block_map
         };
-        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, lbl);
+        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, &self.loop_iter_counter, func, lbl);
         let target_block = target.block.clone();
 
         self.builder.build_conditional_branch(
@@ -785,7 +794,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         let args_ptr_phi = self.builder.build_phi(val_ptr_type, "args_ptr");
         args_ptr_phi.add_incoming(&[(&args_ptr, entry_block), (&copied_args_cast, copy_arg_check_block)]);
 
-        self.args = Option::Some(args_ptr_phi.as_basic_value().into_pointer_value())
+        self.args = Option::Some(args_ptr_phi.as_basic_value().into_pointer_value());
     }
 
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
@@ -864,7 +873,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                             val_type: &self.val_type,
                             block_map: &mut self.block_map,
                         };
-                        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, block).block;
+                        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, &self.loop_iter_counter, func, block).block;
                         if let ValueTagPredicate::Tag(t) = predicate {
                             jumps.push((self.const_tag(t), target))
                         } else if matches!(predicate, ValueTagPredicate::Any) {
@@ -1359,7 +1368,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     val_type: &self.val_type,
                     block_map: &mut self.block_map
                 };
-                let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, func, lbl);
+                let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, &self.loop_iter_counter, func, lbl);
                 self.builder.build_unconditional_branch(target.block);
                 self.block_ended = true;
             }
@@ -1381,6 +1390,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 if let Some(cache) = target.cache_phi {
                     self.cache = Option::Some(cache.as_basic_value().into_struct_value())
                 }
+
+                self.loop_iter_counter = target.loop_iter_counter_phi.as_basic_value().into_int_value();
 
                 if !self.block_ended {
                     self.builder.build_unconditional_branch(target.block);
@@ -1461,6 +1472,31 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 if cfg!(debug_deopt_print) {
                     self.dbg(format!("CheckType({}, {:?}, {:?}) failed: ", stack_pos, predicate, deopt).as_str());
                     self.dbg_val(stack_value);
+                }
+                self.emit(deopt.borrow(), func);
+                self.builder.build_unconditional_branch(next_block);
+
+                self.builder.position_at_end(next_block);
+            }
+            DMIR::InfLoopCheckDeopt(deopt) => {
+                let one_const = self.context.i32_type().const_int(1, false);
+
+                let result_value = self.builder.build_int_sub(self.loop_iter_counter, one_const, "sub");
+
+                let next_block = self.context.append_basic_block(func, "next");
+                let deopt_block = self.context.append_basic_block(func, "deopt");
+
+                self.loop_iter_counter = result_value;
+
+                self.builder.build_conditional_branch(
+                    self.builder.build_int_compare(IntPredicate::NE, result_value, self.context.i32_type().const_zero(), "ne"),
+                    next_block,
+                    deopt_block,
+                );
+
+                self.builder.position_at_end(deopt_block);
+                if cfg!(debug_deopt_print) {
+                    self.dbg(format!("InfLoopCheck({:?}) failed: ", deopt).as_str());
                 }
                 self.emit(deopt.borrow(), func);
                 self.builder.build_unconditional_branch(next_block);

@@ -8,7 +8,6 @@ use std::hash::{Hash, Hasher};
 use typed_arena::Arena;
 
 use crate::dmir::{DMIR, RefOpDisposition};
-use crate::dmir::DMIR::ListCheckSizeDeopt;
 use crate::dmir::ValueLocation;
 use crate::dmir_annotate::Annotator;
 use crate::ref_count::RValue::Phi;
@@ -440,7 +439,7 @@ impl<'t> Analyzer<'t> {
                 }
                 self.block_ended = true;
             }
-            DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) => {
+            DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) | DMIR::InfLoopCheckDeopt(deopt)=> {
                 let old_block_ended = self.block_ended;
                 self.analyze_instruction(pos, deopt.borrow());
                 self.block_ended = old_block_ended;
@@ -757,7 +756,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
             DeoptDrain(pos, _, op) => {
                 let instruction = ir.get_mut(pos.clone()).unwrap();
                 match instruction {
-                    DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) => {
+                    DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) | DMIR::InfLoopCheckDeopt(deopt)  => {
                         let mut tmp = DMIR::End;
                         std::mem::swap(deopt.borrow_mut(), &mut tmp);
                         *deopt.borrow_mut() = create_inc_ref_count_ir(tmp, op);

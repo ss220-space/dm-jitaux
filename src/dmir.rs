@@ -58,6 +58,7 @@ pub enum DMIR {
     JNZInternal(String), // Jump based on internal_test_flag
     EnterBlock(String),
     Jmp(String),
+    InfLoopCheckDeopt(Box<DMIR>),
     Deopt(u32, ProcId),
     CheckTypeDeopt(u32, ValueTagPredicate, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
@@ -447,6 +448,15 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::Jmp(lbl.0));
                         block_ended = true;
                     }
+                    Instruction::JzLoop(lbl) => {
+                        irs.push(DMIR::InfLoopCheckDeopt(deopt!()));
+                        irs.push(DMIR::JZ(lbl.0));
+                    }
+                    Instruction::JmpLoop(lbl) => {
+                        irs.push(DMIR::InfLoopCheckDeopt(deopt!()));
+                        irs.push(DMIR::Jmp(lbl.0));
+                        block_ended = true;
+                    }
                     Instruction::JmpAnd(lbl) => {
                         irs.push(DMIR::Dup);
                         irs.push(DMIR::TestInternal);
@@ -543,7 +553,7 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         ));
                     }
                     Instruction::PopN(count) => {
-                        for _i in 0..count {
+                        for _i in 1..count {
                             irs.push(DMIR::Pop)
                         }
                     }
