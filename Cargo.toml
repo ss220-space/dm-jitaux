@@ -42,5 +42,9 @@ test_utils = []
 bench_utils = ["criterion", "test_utils"]
 tools = []
 
+[profile.release]
+lto = true
+opt-level = 3
+
 [profile.release-dist]
 inherits = "release"
