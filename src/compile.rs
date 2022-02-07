@@ -218,6 +218,8 @@ fn compile_proc<'ctx>(
     let fpm = PassManager::create(code_gen.module);
 
     fpm.add_early_cse_mem_ssa_pass();
+    fpm.add_loop_idiom_pass();
+    fpm.add_licm_pass();
     fpm.add_instruction_combining_pass();
     fpm.add_cfg_simplification_pass();
     fpm.add_basic_alias_analysis_pass();

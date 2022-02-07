@@ -43,3 +43,5 @@ test_dm!(test_round);
 test_dm!(test_gas_mixture_share + "gas_mixture.dm");
 test_dm!(test_list_get_set);
 test_dm!(test_list_binary_ops);
+test_dm!(test_loops);
+test_dm!(test_inc_dec);

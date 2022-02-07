@@ -29,6 +29,8 @@ pub enum DMIR {
     FloatDiv,
     FloatCmp(inkwell::FloatPredicate),
     FloatAbs,
+    FloatInc,
+    FloatDec,
     RoundN,
     ListCheckSizeDeopt(ValueLocation, ValueLocation, Box<DMIR>),
     ListCopy,
@@ -50,12 +52,15 @@ pub enum DMIR {
     JZ(String),
     Dup, // Duplicate last value on stack
     DupX1, // Duplicate top value and insert one slot back ..., a, b -> ..., b, a, b
-    Swap, // Swap values on stack top: ..., b, a -> ..., a, b
+    DupX2, // Duplicate top value and insert two slot back ..., a, b, c -> ..., c, a, b, c
+    Swap, // Put value one slot back on stack top: ..., a, b -> ..., b, a
+    SwapX1, // Put value two slot back on stack top: ..., a, b, c -> ..., b, c, a
     TestInternal,        // Perform Test and write internal_test_flag
     JZInternal(String),  // Jump based on internal_test_flag
     JNZInternal(String), // Jump based on internal_test_flag
     EnterBlock(String),
     Jmp(String),
+    InfLoopCheckDeopt(Box<DMIR>),
     Deopt(u32, ProcId),
     CheckTypeDeopt(u32, ValueTagPredicate, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
@@ -445,6 +450,15 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::Jmp(lbl.0));
                         block_ended = true;
                     }
+                    Instruction::JzLoop(lbl) => {
+                        irs.push(DMIR::InfLoopCheckDeopt(deopt!()));
+                        irs.push(DMIR::JZ(lbl.0));
+                    }
+                    Instruction::JmpLoop(lbl) => {
+                        irs.push(DMIR::InfLoopCheckDeopt(deopt!()));
+                        irs.push(DMIR::Jmp(lbl.0));
+                        block_ended = true;
+                    }
                     Instruction::JmpAnd(lbl) => {
                         irs.push(DMIR::Dup);
                         irs.push(DMIR::TestInternal);
@@ -490,8 +504,94 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         decode_binary_instruction(Instruction::Sub, &data, &proc, &mut switch_counter, &mut block);
                         decode_aug_instruction(&var, &mut block, &mut irs)
                     }
+                    Instruction::Inc(var) => {
+                        decode_get_var(&var, &mut irs);
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Datum) => deopt!(@type_switch),
+                            (@any) => vec![DMIR::FloatInc]
+                        ));
+                        decode_set_var(&var, &mut irs);
+                    }
+                    Instruction::Dec(var) => {
+                        decode_get_var(&var, &mut irs);
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Datum) => deopt!(@type_switch),
+                            (@any) => vec![DMIR::FloatDec]
+                        ));
+                        decode_set_var(&var, &mut irs);
+                    }
                     Instruction::IsNull => {
                         irs.push(DMIR::IsNull)
+                    }
+                    Instruction::Check2Numbers => {
+                        irs.push(CheckTypeDeopt(
+                            0,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                    }
+                    Instruction::Check3Numbers => {
+                        irs.push(CheckTypeDeopt(
+                            0,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                        irs.push(CheckTypeDeopt(
+                            1,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                        irs.push(CheckTypeDeopt(
+                            2,
+                            value_tag_pred!(ValueTag::Number),
+                            deopt!(),
+                        ));
+                    }
+                    Instruction::PopN(count) => {
+                        for _i in 0..count {
+                            irs.push(DMIR::Pop)
+                        }
+                    }
+                    Instruction::ForRange(lab, var) => {
+                        // a - counter, b - upper bound
+                        // stack ... a b
+                        irs.push(DMIR::Swap); // b a
+                        irs.push(DMIR::DupX1); // a b a
+                        irs.push(DMIR::Swap); // a a b
+                        irs.push(DMIR::DupX1); // a b a b
+                        irs.push(DMIR::FloatCmp(FloatPredicate::ULE)); // a b r
+                        irs.push(DMIR::TestInternal); // a b
+                        irs.push(DMIR::JZInternal(lab.0)); // a b
+                        irs.push(DMIR::Swap); // b a
+                        irs.push(DMIR::FloatInc); //b (a+1)
+                        irs.push(DMIR::DupX1); // (a+1) b (a+1)
+                        decode_set_var(&var, &mut irs); // (a+1) b
+                    }
+                    Instruction::ForRangeStep(lab, var) => {
+                        // a - counter, b - upper bound, c - step
+                        // stack ... a b c
+                        irs.push(DMIR::SwapX1); // b c a
+                        irs.push(DMIR::DupX2); // a b c a
+                        irs.push(DMIR::SwapX1); // a c a b
+                        irs.push(DMIR::DupX2); // a b c a b
+                        irs.push(DMIR::FloatCmp(FloatPredicate::ULE)); // a b c r
+                        irs.push(DMIR::TestInternal); // a b c
+                        irs.push(DMIR::JZInternal(lab.0)); // a b c
+                        irs.push(DMIR::SwapX1); // b c a
+                        irs.push(DMIR::Swap); // b a c
+                        irs.push(DMIR::DupX2); // c b a c
+                        irs.push(DMIR::FloatAdd); // c b (a+c)
+                        irs.push(DMIR::DupX2); // (a+c) c b (a+c)
+                        irs.push(DMIR::SwapX1); // (a+c) b (a+c) c
+                        irs.push(DMIR::Swap); // (a+c) b c (a+c)
+                        decode_set_var(&var, &mut irs); // (a+c) b c
                     }
                     _ => {
                         log::info!("Unsupported insn {}", insn);

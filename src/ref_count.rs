@@ -8,7 +8,6 @@ use std::hash::{Hash, Hasher};
 use typed_arena::Arena;
 
 use crate::dmir::{DMIR, RefOpDisposition};
-use crate::dmir::DMIR::ListCheckSizeDeopt;
 use crate::dmir::ValueLocation;
 use crate::dmir_annotate::Annotator;
 use crate::ref_count::RValue::Phi;
@@ -342,6 +341,12 @@ impl<'t> Analyzer<'t> {
                     @produce_uncounted @stack
                 );
             }
+            DMIR::FloatInc | DMIR::FloatDec => {
+                op_effect!(
+                    @consume @stack,
+                    @produce_uncounted @stack
+                );
+            }
             DMIR::PushInt(_) => {
                 op_effect!(@produce_uncounted @stack);
             }
@@ -410,6 +415,14 @@ impl<'t> Analyzer<'t> {
                 self.stack.push(a);
                 self.stack.push(b);
             }
+            DMIR::SwapX1 => {
+                let a = self.stack.pop().unwrap();
+                let b = self.stack.pop().unwrap();
+                let c = self.stack.pop().unwrap();
+                self.stack.push(b);
+                self.stack.push(a);
+                self.stack.push(c);
+            }
             DMIR::TestInternal => {
                 op_effect!(@consume @stack);
             }
@@ -434,7 +447,7 @@ impl<'t> Analyzer<'t> {
                 }
                 self.block_ended = true;
             }
-            DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) => {
+            DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) | DMIR::InfLoopCheckDeopt(deopt)=> {
                 let old_block_ended = self.block_ended;
                 self.analyze_instruction(pos, deopt.borrow());
                 self.block_ended = old_block_ended;
@@ -474,6 +487,16 @@ impl<'t> Analyzer<'t> {
 
                 self.stack.push(b);
                 self.stack.push(a);
+                op_effect!(@produce @stack)
+            }
+            DMIR::DupX2 => {
+                let c = self.stack.pop().unwrap();
+                let b = self.stack.pop().unwrap();
+                let a = self.stack.pop().unwrap();
+
+                self.stack.push(c);
+                self.stack.push(a);
+                self.stack.push(b);
                 op_effect!(@produce @stack)
             }
             DMIR::Jmp(lbl) => {
@@ -751,7 +774,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
             DeoptDrain(pos, _, op) => {
                 let instruction = ir.get_mut(pos.clone()).unwrap();
                 match instruction {
-                    DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) => {
+                    DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) | DMIR::InfLoopCheckDeopt(deopt)  => {
                         let mut tmp = DMIR::End;
                         std::mem::swap(deopt.borrow_mut(), &mut tmp);
                         *deopt.borrow_mut() = create_inc_ref_count_ir(tmp, op);
