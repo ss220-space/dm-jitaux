@@ -415,6 +415,14 @@ impl<'t> Analyzer<'t> {
                 self.stack.push(a);
                 self.stack.push(b);
             }
+            DMIR::SwapX1 => {
+                let a = self.stack.pop().unwrap();
+                let b = self.stack.pop().unwrap();
+                let c = self.stack.pop().unwrap();
+                self.stack.push(b);
+                self.stack.push(a);
+                self.stack.push(c);
+            }
             DMIR::TestInternal => {
                 op_effect!(@consume @stack);
             }
@@ -479,6 +487,16 @@ impl<'t> Analyzer<'t> {
 
                 self.stack.push(b);
                 self.stack.push(a);
+                op_effect!(@produce @stack)
+            }
+            DMIR::DupX2 => {
+                let c = self.stack.pop().unwrap();
+                let b = self.stack.pop().unwrap();
+                let a = self.stack.pop().unwrap();
+
+                self.stack.push(c);
+                self.stack.push(a);
+                self.stack.push(b);
                 op_effect!(@produce @stack)
             }
             DMIR::Jmp(lbl) => {

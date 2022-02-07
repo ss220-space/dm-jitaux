@@ -1342,11 +1342,29 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(a);
                 self.stack().push(b);
             }
+            DMIR::DupX2 => {
+                let c = self.stack().pop();
+                let b = self.stack().pop();
+                let a = self.stack().pop();
+
+                self.stack().push(c);
+                self.stack().push(a);
+                self.stack().push(b);
+                self.stack().push(c);
+            }
             DMIR::Swap => {
                 let a = self.stack().pop();
                 let b = self.stack().pop();
                 self.stack().push(a);
                 self.stack().push(b);
+            }
+            DMIR::SwapX1 => {
+                let a = self.stack().pop();
+                let b = self.stack().pop();
+                let c = self.stack().pop();
+                self.stack().push(b);
+                self.stack().push(a);
+                self.stack().push(c);
             }
             DMIR::TestInternal => {
                 let arg_value = self.stack().pop();

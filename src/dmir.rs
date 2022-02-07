@@ -52,7 +52,9 @@ pub enum DMIR {
     JZ(String),
     Dup, // Duplicate last value on stack
     DupX1, // Duplicate top value and insert one slot back ..., a, b -> ..., b, a, b
-    Swap, // Swap values on stack top: ..., b, a -> ..., a, b
+    DupX2, // Duplicate top value and insert two slot back ..., a, b, c -> ..., c, a, b, c
+    Swap, // Put value one slot back on stack top: ..., a, b -> ..., b, a
+    SwapX1, // Put value two slot back on stack top: ..., a, b, c -> ..., b, c, a
     TestInternal,        // Perform Test and write internal_test_flag
     JZInternal(String),  // Jump based on internal_test_flag
     JNZInternal(String), // Jump based on internal_test_flag
@@ -569,6 +571,25 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::PushInt(1));
                         irs.push(DMIR::FloatAdd);
                         irs.push(DMIR::DupX1);
+                        decode_set_var(&var, &mut irs);
+                    }
+                    Instruction::ForRangeStep(lab, var) => {
+                        // a - counter, b - upper bound, c - step
+                        // a b c | b c a | a b c a | a c a b | a b c a b | a b c r | a b c | b c a | b a c | c b a c | c b (a+c) | (a+c) c b (a+c) | (a+c) b (a+c) c | (a+c) b c (a+c) | (a+c) b c
+                        irs.push(DMIR::SwapX1);
+                        irs.push(DMIR::DupX2);
+                        irs.push(DMIR::SwapX1);
+                        irs.push(DMIR::DupX2);
+                        irs.push(DMIR::FloatCmp(FloatPredicate::ULE));
+                        irs.push(DMIR::TestInternal);
+                        irs.push(DMIR::JZInternal(lab.0));
+                        irs.push(DMIR::SwapX1);
+                        irs.push(DMIR::Swap);
+                        irs.push(DMIR::DupX2);
+                        irs.push(DMIR::FloatAdd);
+                        irs.push(DMIR::DupX2);
+                        irs.push(DMIR::SwapX1);
+                        irs.push(DMIR::Swap);
                         decode_set_var(&var, &mut irs);
                     }
                     _ => {
