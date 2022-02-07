@@ -99,6 +99,37 @@ impl<'ctx, 'b> CodeGen<'ctx, 'b> {
     }
 }
 
+macro_rules! decl_type {
+    ($code_gen:ident DMValue) => (
+        $code_gen.val_type
+    );
+    ($code_gen:ident i8_ptr) => (
+        $code_gen.context.i8_type().ptr_type(AddressSpace::Generic)
+    );
+    ($code_gen:ident $arg:ident) => (
+        $code_gen.context.$arg()
+    );
+}
+
+macro_rules! decl_sig {
+    ($code_gen:ident ($($arg:tt),+) -> $result:tt) => (
+        decl_type!($code_gen $result).fn_type(&[$(decl_type!($code_gen $arg).into()),+], false)
+    );
+}
+
+macro_rules! decl_intrinsic {
+    ($code_gen:ident $name:literal $($sig:tt)+) => ({
+        let function =
+            if let Some(func) = $code_gen.module.get_function($name) {
+                func
+            } else {
+                let t = decl_sig!($code_gen $($sig)+);
+                $code_gen.module.add_function($name, t, None)
+            };
+        function
+    });
+}
+
 struct BlockBuilder<'ctx, 'a> {
     context: &'ctx Context,
     builder: &'a Builder<'ctx>,
@@ -733,22 +764,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
 
-        macro_rules! decl_intrinsic {
-            ($code_gen:ident $name:literal ($($arg:ident),+) -> $result:ident) => ({
-                let function =
-                    if let Some(func) = $code_gen.module.get_function($name) {
-                        func
-                    } else {
-                        let t = $code_gen.context.$result().fn_type(&[$($code_gen.context.$arg().into()),+], false);
-                        $code_gen.module.add_function($name, t, None)
-                    };
-                function
-            });
-            ($name:literal ($($arg:ident),+) -> $result:ident) => (decl_intrinsic!(self $name ($($arg),+) -> $result))
-        }
-
-
-
         match ir {
             DMIR::Nop => {}
             // Load src onto stack
@@ -894,7 +909,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let arg = self.emit_load_meta_value(arg_value);
                 let arg_num = self.emit_to_number_or_zero(func, arg);
 
-                let fabs = decl_intrinsic!("llvm.fabs.f32" (f32_type) -> f32_type);
+                let fabs = decl_intrinsic!(self "llvm.fabs.f32" (f32_type) -> f32_type);
 
                 let result = self.builder.build_call(fabs, &[arg_num.into()], "abs").try_as_basic_value().left().unwrap().into_float_value();
 
