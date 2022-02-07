@@ -101,7 +101,12 @@ pub fn variable_termination_pass(ir: &mut Vec<DMIR>) {
         has_changes = false;
     }
 
-    assert!(phi_queue.is_empty(), "phi queue not empty, incorrect cyclic dependency");
+    // Consider all remaining phi nodes as present
+    // As Phi node can only exist if there is some source, if absence of value no proven for each of phi in cycle,
+    // whole cycle should be considered present
+    for phi in phi_queue {
+        phi_solve_state.insert(phi.id, PhiDecision::Present);
+    }
 
     // log::debug!("phi solve: {:?}", phi_solve_state);
 
