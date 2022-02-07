@@ -13,7 +13,7 @@ use inkwell::context::Context;
 use inkwell::execution_engine::ExecutionEngine;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::StructType;
-use inkwell::values::{AnyValue, BasicValueEnum, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
+use inkwell::values::{AnyValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
 
 use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use crate::pads;
@@ -453,12 +453,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
         return self.context.i8_type().const_int(value_tag as u64, false).into();
     }
 
-    fn emit_to_number_or_zero(&self, func: FunctionValue<'ctx>, value: MetaValue<'ctx>) -> MetaValue<'ctx> {
+    fn emit_to_number_or_zero(&self, func: FunctionValue<'ctx>, value: MetaValue<'ctx>) -> FloatValue<'ctx> {
+        let before = self.builder.get_insert_block().unwrap();
         let iff_number = self.context.append_basic_block(func, "iff_number");
         let next = self.context.append_basic_block(func, "next");
 
-        let out_f32_ptr = self.builder.build_alloca(self.context.f32_type(), "second_f32_store");
-        self.builder.build_store(out_f32_ptr, self.context.f32_type().const_zero());
+        let zero_value = self.context.f32_type().const_zero();
 
         let number_tag = self.const_tag(ValueTag::Number);
 
@@ -467,17 +467,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
             iff_number,
             next,
         );
-        {
+        let number_value = {
             self.builder.position_at_end(iff_number);
-            let number_value = self.builder.build_bitcast(value.data, self.context.f32_type(), "cast_float");
-            self.builder.build_store(out_f32_ptr, number_value);
+            let r = self.builder.build_bitcast(value.data, self.context.f32_type(), "cast_float").into_float_value();
             self.builder.build_unconditional_branch(next);
+            r
         };
 
         self.builder.position_at_end(next);
-        let out_f32 = self.builder.build_load(out_f32_ptr, "out_f32").into_float_value();
+        let out_phi = self.builder.build_phi(self.context.f32_type(), "to_number_or_zero_res");
+        out_phi.add_incoming(&[(&zero_value, before), (&number_value, iff_number)]);
 
-        return MetaValue::with_tag(ValueTag::Number, out_f32.into(), self);
+        return out_phi.as_basic_value().into_float_value()
     }
 
     fn emit_null_to_zero(&mut self, func: FunctionValue<'ctx>, value: MetaValue<'ctx>) -> MetaValue<'ctx> {
@@ -846,7 +847,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::FloatSub => {
                 self.emit_bin_op(|first, second, code_gen| {
                     let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
-                    let second_f32 = code_gen.emit_to_number_or_zero(func, second).data.into_float_value();
+                    let second_f32 = code_gen.emit_to_number_or_zero(func, second);
 
                     let result_value = code_gen.builder.build_float_sub(second_f32, first_f32, "sub");
                     let result_i32 = code_gen.builder.build_bitcast(result_value, code_gen.context.i32_type(), "result_i32").into_int_value();
@@ -856,7 +857,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::FloatMul => {
                 self.emit_bin_op(|first, second, code_gen| {
-                    let first_f32 = code_gen.emit_to_number_or_zero(func, first).data.into_float_value();
+                    let first_f32 = code_gen.emit_to_number_or_zero(func, first);
                     let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "first_f32").into_float_value();
 
                     let result_value = code_gen.builder.build_float_mul(first_f32, second_f32, "mul");
@@ -895,7 +896,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let fabs = decl_intrinsic!("llvm.fabs.f32" (f32_type) -> f32_type);
 
-                let result = self.builder.build_call(fabs, &[arg_num.data.into_float_value().into()], "abs").try_as_basic_value().left().unwrap().into_float_value();
+                let result = self.builder.build_call(fabs, &[arg_num.into()], "abs").try_as_basic_value().left().unwrap().into_float_value();
 
                 let result_i32 = self.builder.build_bitcast(result, self.context.i32_type(), "cast_result").into_int_value();
                 let meta_result = MetaValue::with_tag(ValueTag::Number, result_i32.into(), self);
@@ -904,8 +905,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::RoundN => {
                 self.emit_bin_op(|first, second, code_gen| {
-                    let first_f32 = code_gen.emit_to_number_or_zero(func, first.clone()).data.into_float_value();
-                    let second_f32 = code_gen.emit_to_number_or_zero(func, second.clone()).data.into_float_value();
+                    let first_f32 = code_gen.emit_to_number_or_zero(func, first.clone());
+                    let second_f32 = code_gen.emit_to_number_or_zero(func, second.clone());
                     // first_f32: round to
                     // second_f32: value to round
                     let divided = code_gen.builder.build_float_div(second_f32, first_f32, "div");
