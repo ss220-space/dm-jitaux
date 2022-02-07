@@ -1,11 +1,10 @@
 /proc/do_test()
     compile_proc(/proc/test_while)
-    CHECK_INSTALL_COMPILED // RES: /test_while, /test_for_classic, /test_for_range, /test_inc, /test_dec
+    compile_proc(/proc/test_for_classic)
+    compile_proc(/proc/test_for_range)
+    CHECK_INSTALL_COMPILED // RES: /test_while, /test_for_classic, /test_for_range
 
-    RES(test_inc()) // RES: 3
-    RES(test_dec()) // RES: 7
-
-    RES(test_while(10000000)) // RES: 100
+    RES(test_while(10)) // RES: 100
     RES(test_for_classic(10)) // RES: 100
     RES(test_for_range(10)) // RES: 100
     RES(test_deopted(10)) // RES: 100
@@ -13,20 +12,6 @@
     RES(test_for_classic(5)) // RES: 25
     RES(test_for_range(5)) // RES: 25
     RES(test_deopted(5)) // RES: 25
-
-/proc/test_inc()
-    var/ret = 0
-    ret++
-    ret++
-    ret++
-    return ret
-
-/proc/test_dec()
-    var/ret = 10
-    ret--
-    ret--
-    ret--
-    return ret
 
 /proc/test_for_classic(c)
     var/ret = 0
