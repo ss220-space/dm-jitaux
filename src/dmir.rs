@@ -561,36 +561,37 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     }
                     Instruction::ForRange(lab, var) => {
                         // a - counter, b - upper bound
-                        // a b | b a b | b b a | b a a b | b a c | b a | b a 1 | b (a+1) | (a+1) b (a+1) | (a+1) b
-                        irs.push(DMIR::DupX1);
-                        irs.push(DMIR::Swap);
-                        irs.push(DMIR::DupX1);
-                        irs.push(DMIR::FloatCmp(FloatPredicate::UGE));
-                        irs.push(DMIR::TestInternal);
-                        irs.push(DMIR::JZInternal(lab.0));
-                        irs.push(DMIR::PushInt(1));
-                        irs.push(DMIR::FloatAdd);
-                        irs.push(DMIR::DupX1);
-                        decode_set_var(&var, &mut irs);
+                        // stack ... a b
+                        irs.push(DMIR::Swap); // b a
+                        irs.push(DMIR::DupX1); // a b a
+                        irs.push(DMIR::Swap); // a a b
+                        irs.push(DMIR::DupX1); // a b a b
+                        irs.push(DMIR::FloatCmp(FloatPredicate::ULE)); // a b r
+                        irs.push(DMIR::TestInternal); // a b
+                        irs.push(DMIR::JZInternal(lab.0)); // a b
+                        irs.push(DMIR::Swap); // b a
+                        irs.push(DMIR::FloatInc); //b (a+1)
+                        irs.push(DMIR::DupX1); // (a+1) b (a+1)
+                        decode_set_var(&var, &mut irs); // (a+1) b
                     }
                     Instruction::ForRangeStep(lab, var) => {
                         // a - counter, b - upper bound, c - step
-                        // a b c | b c a | a b c a | a c a b | a b c a b | a b c r | a b c | b c a | b a c | c b a c | c b (a+c) | (a+c) c b (a+c) | (a+c) b (a+c) c | (a+c) b c (a+c) | (a+c) b c
-                        irs.push(DMIR::SwapX1);
-                        irs.push(DMIR::DupX2);
-                        irs.push(DMIR::SwapX1);
-                        irs.push(DMIR::DupX2);
-                        irs.push(DMIR::FloatCmp(FloatPredicate::ULE));
-                        irs.push(DMIR::TestInternal);
-                        irs.push(DMIR::JZInternal(lab.0));
-                        irs.push(DMIR::SwapX1);
-                        irs.push(DMIR::Swap);
-                        irs.push(DMIR::DupX2);
-                        irs.push(DMIR::FloatAdd);
-                        irs.push(DMIR::DupX2);
-                        irs.push(DMIR::SwapX1);
-                        irs.push(DMIR::Swap);
-                        decode_set_var(&var, &mut irs);
+                        // stack ... a b c
+                        irs.push(DMIR::SwapX1); // b c a
+                        irs.push(DMIR::DupX2); // a b c a
+                        irs.push(DMIR::SwapX1); // a c a b
+                        irs.push(DMIR::DupX2); // a b c a b
+                        irs.push(DMIR::FloatCmp(FloatPredicate::ULE)); // a b c r
+                        irs.push(DMIR::TestInternal); // a b c
+                        irs.push(DMIR::JZInternal(lab.0)); // a b c
+                        irs.push(DMIR::SwapX1); // b c a
+                        irs.push(DMIR::Swap); // b a c
+                        irs.push(DMIR::DupX2); // c b a c
+                        irs.push(DMIR::FloatAdd); // c b (a+c)
+                        irs.push(DMIR::DupX2); // (a+c) c b (a+c)
+                        irs.push(DMIR::SwapX1); // (a+c) b (a+c) c
+                        irs.push(DMIR::Swap); // (a+c) b c (a+c)
+                        decode_set_var(&var, &mut irs); // (a+c) b c
                     }
                     _ => {
                         log::info!("Unsupported insn {}", insn);
