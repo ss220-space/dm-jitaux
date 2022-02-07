@@ -1098,18 +1098,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(out_value);
             }
             DMIR::PushInt(val) => {
-                let out = self.builder.build_alloca(self.val_type, "push_int");
-
-                let mut out_val = self.builder.build_load(out, "load_out").into_struct_value();
-                out_val = self.builder.build_insert_value(out_val, self.context.i8_type().const_int(0x2a, false), 0, "store_number_tag").unwrap().into_struct_value();
-
-                let result_i32 = self.builder.build_bitcast(
-                    self.context.f32_type().const_float(val.clone() as f64).const_cast(self.context.f32_type()),
+                // val is int, so convert it to float as all values in byond are floats, then bit-cast to store it within DMValue
+                let value = self.builder.build_bitcast(
+                    self.context.f32_type().const_float((*val) as f64),
                     self.context.i32_type(),
-                    "load_value",
-                ).into_int_value();
-
-                out_val = self.builder.build_insert_value(out_val, result_i32, 1, "store_value").unwrap().into_struct_value();
+                    "f32_to_i32"
+                );
+                let out_val = self.val_type.const_named_struct(
+                    &[
+                        self.const_tag(ValueTag::Number).into(),
+                        value.into(),
+                    ]
+                );
 
                 self.stack().push(out_val);
 
