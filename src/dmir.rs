@@ -553,7 +553,7 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         ));
                     }
                     Instruction::PopN(count) => {
-                        for _i in 1..count {
+                        for _i in 0..count {
                             irs.push(DMIR::Pop)
                         }
                     }
