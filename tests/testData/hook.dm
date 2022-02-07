@@ -59,3 +59,8 @@
 
 /proc/dmjit_print_list_content(list)
     DMJIT_NATIVE
+
+
+// This function is treated as intrinsic in dmJIT, if calling proc JIT-ed and not yet deopt-ed, returns TRUE
+/proc/dmjit_is_optimized()
+    return FALSE
