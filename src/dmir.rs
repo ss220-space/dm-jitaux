@@ -557,6 +557,20 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                             irs.push(DMIR::Pop)
                         }
                     }
+                    Instruction::ForRange(lab, var) => {
+                        // a - counter, b - upper bound
+                        // a b | b a b | b b a | b a a b | b a c | b a | b a 1 | b (a+1) | (a+1) b (a+1) | (a+1) b
+                        irs.push(DMIR::DupX1);
+                        irs.push(DMIR::Swap);
+                        irs.push(DMIR::DupX1);
+                        irs.push(DMIR::FloatCmp(FloatPredicate::UGE));
+                        irs.push(DMIR::TestInternal);
+                        irs.push(DMIR::JZInternal(lab.0));
+                        irs.push(DMIR::PushInt(1));
+                        irs.push(DMIR::FloatAdd);
+                        irs.push(DMIR::DupX1);
+                        decode_set_var(&var, &mut irs);
+                    }
                     _ => {
                         log::info!("Unsupported insn {}", insn);
                         supported = false;
