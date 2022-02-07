@@ -13,7 +13,7 @@ use inkwell::context::Context;
 use inkwell::execution_engine::ExecutionEngine;
 use inkwell::module::{Linkage, Module};
 use inkwell::types::StructType;
-use inkwell::values::{AnyValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
+use inkwell::values::{AnyValue, ArrayValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
 
 use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use crate::pads;
@@ -540,16 +540,42 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.emit_load_meta_value(phi.as_basic_value().into_struct_value())
     }
 
-    fn emit_store_args_from_stack(&mut self, arg_count: u32) -> PointerValue<'ctx> {
-        let out_stack_type = self.val_type.array_type(arg_count as u32);
-        let args = self.builder.build_alloca(out_stack_type, "out_stack");
+    fn emit_lifetime_start(&mut self, pointer: PointerValue<'ctx>, name: &str) {
+        let func = decl_intrinsic!(self "llvm.lifetime.start.p0i8" (i64_type, i8_ptr) -> void_type);
+
+        let value_ptr = self.builder.build_pointer_cast(pointer, self.context.i8_type().ptr_type(AddressSpace::Generic), "ptr_cast");
+        self.builder.build_call(
+            func,
+            &[
+                self.context.i64_type().const_int((-1i64) as u64, true).into(),
+                value_ptr.into()
+            ],
+            name
+        );
+    }
+
+    fn emit_lifetime_end(&mut self, pointer: PointerValue<'ctx>, name: &str) {
+        let func = decl_intrinsic!(self "llvm.lifetime.end.p0i8" (i64_type, i8_ptr) -> void_type);
+
+        let value_ptr = self.builder.build_pointer_cast(pointer, self.context.i8_type().ptr_type(AddressSpace::Generic), "ptr_cast");
+        self.builder.build_call(
+            func,
+            &[
+                self.context.i64_type().const_int((-1i64) as u64, true).into(),
+                value_ptr.into()
+            ],
+            name
+        );
+    }
+
+    fn emit_pop_stack_to_array(&mut self, count: u32) -> ArrayValue<'ctx> {
+        let out_stack_type = self.val_type.array_type(count as u32);
         let mut stack_out_array = out_stack_type.const_zero();
-        for idx in (0..arg_count).rev() {
+        for idx in (0..count).rev() {
             let arg = self.stack().pop();
             stack_out_array = self.builder.build_insert_value(stack_out_array, arg, idx as u32, "store_value_from_stack").unwrap().into_array_value();
         }
-        self.builder.build_store(args, stack_out_array);
-        return self.builder.build_bitcast(args, self.val_type.ptr_type(Generic), "cast_to_ptr").into_pointer_value();
+        return stack_out_array
     }
 
     // Actual return type is i1/bool
@@ -787,9 +813,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let receiver_value = self.cache.unwrap();
 
                 let out = self.builder.build_alloca(self.val_type, "field_get_result");
+                self.emit_lifetime_start(out, "out_lifetime_start");
                 self.builder.build_call(get_var_func, &[out.into(), receiver_value.into(), self.context.i32_type().const_int(name_id.clone() as u64, false).into()], "get_cache_field");
 
                 let out_value = self.builder.build_load(out, "out_value").into_struct_value();
+                self.emit_lifetime_end(out, "out_lifetime_end");
                 self.stack().push(out_value);
                 // self.dbg("GetVar");
                 // self.dbg_val(self.builder.build_load(out, "load_dbg").into_struct_value());
@@ -1055,13 +1083,18 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::CallProcById(proc_id, proc_call_type, arg_count) => {
                 let src = self.stack().pop();
 
-                let args = self.emit_store_args_from_stack(arg_count.clone());
+                let args_array = self.emit_pop_stack_to_array(arg_count.clone());
+                let args_ptr = self.builder.build_alloca(args_array.get_type(), "args_ptr");
+                self.emit_lifetime_start(args_ptr,  "args_lifetime_start");
+                self.builder.build_store(args_ptr, args_array);
+                let args = self.builder.build_pointer_cast(args_ptr, self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
 
                 let call_proc_by_id = self.module.get_function(INTRINSIC_CALL_PROC_BY_ID).unwrap();
 
                 let usr = func.get_nth_param(2).unwrap().into_struct_value(); // TODO: Proc can change self usr
 
                 let out = self.builder.build_alloca(self.val_type, "call_result");
+                self.emit_lifetime_start(out, "out_lifetime_start");
 
                 self.builder.build_call(
                     call_proc_by_id,
@@ -1081,18 +1114,26 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 );
 
                 let out_value = self.builder.build_load(out, "call_result_value").into_struct_value();
+                self.emit_lifetime_end(args_ptr,  "args_lifetime_end");
+                self.emit_lifetime_end(out, "out_lifetime_end");
+
                 self.stack().push(out_value);
             }
             DMIR::CallProcByName(string_id, proc_call_type, arg_count) => {
                 let src = self.stack().pop();
 
-                let args = self.emit_store_args_from_stack(arg_count.clone());
+                let args_array = self.emit_pop_stack_to_array(arg_count.clone());
+                let args_ptr = self.builder.build_alloca(args_array.get_type(), "args_ptr");
+                self.emit_lifetime_start(args_ptr,  "args_lifetime_start");
+                self.builder.build_store(args_ptr, args_array);
+                let args = self.builder.build_pointer_cast(args_ptr, self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
 
                 let call_proc_by_name = self.module.get_function(INTRINSIC_CALL_PROC_BY_NAME).unwrap();
 
                 let usr = func.get_nth_param(2).unwrap().into_struct_value(); // TODO: Proc can change self usr
 
                 let out = self.builder.build_alloca(self.val_type, "call_result");
+                self.emit_lifetime_start(out, "out_lifetime_start");
 
                 self.builder.build_call(
                     call_proc_by_name,
@@ -1111,6 +1152,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 );
 
                 let out_value = self.builder.build_load(out, "call_result_value").into_struct_value();
+                self.emit_lifetime_end(args_ptr,  "args_lifetime_end");
+                self.emit_lifetime_end(out, "out_lifetime_end");
+
                 self.stack().push(out_value);
             }
             DMIR::PushInt(val) => {
