@@ -411,6 +411,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                                 irs.push(DMIR::Deopt(data.offset, proc.id));
                                 gen_push_null(&mut irs);
                             }
+                            "/dmjit_is_optimized" => {
+                                irs.push(DMIR::PushInt(1))
+                            }
                             _ => {
                                 gen_push_null(&mut irs);
                                 let id = Proc::find(callee.path).unwrap().id;
