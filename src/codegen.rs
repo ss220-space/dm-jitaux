@@ -28,8 +28,8 @@ pub struct CodeGen<'ctx, 'a> {
     cache: Option<StructValue<'ctx>>,
     val_type: StructType<'ctx>,
     loop_iter_counter: IntValue<'ctx>,
-    arg_array_ptr: Option<PointerValue<'ctx>>,
-    ret_ptr: Option<PointerValue<'ctx>>,
+    sub_call_arg_array_ptr: Option<PointerValue<'ctx>>,
+    sub_ret_ptr: Option<PointerValue<'ctx>>,
     test_res: Option<IntValue<'ctx>>,
     internal_test_flag: Option<IntValue<'ctx>>,
     block_map: BlockMap<'ctx>,
@@ -414,8 +414,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             cache: None,
             val_type,
             loop_iter_counter: context.i32_type().const_int(0xFFFFF, false),
-            arg_array_ptr: None,
-            ret_ptr: None,
+            sub_call_arg_array_ptr: None,
+            sub_ret_ptr: None,
             test_res: None,
             internal_test_flag: None,
             block_map: HashMap::new(),
@@ -800,8 +800,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
         self.args = Option::Some(args_ptr_phi.as_basic_value().into_pointer_value());
 
-        self.arg_array_ptr = Option::Some(self.builder.build_alloca(self.val_type.array_type(max_arg_count as u32), "proc_args_ptr"));
-        self.ret_ptr = Option::Some(self.builder.build_alloca(self.val_type, "proc_ret_ptr"));
+        self.sub_call_arg_array_ptr = Option::Some(self.builder.build_alloca(self.val_type.array_type(max_arg_count as u32), "proc_args_ptr"));
+        self.sub_ret_ptr = Option::Some(self.builder.build_alloca(self.val_type, "proc_ret_ptr"));
     }
 
     pub fn emit(&mut self, ir: &DMIR, func: FunctionValue<'ctx>) {
@@ -828,11 +828,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let receiver_value = self.cache.unwrap();
 
-                self.emit_lifetime_start(self.ret_ptr.unwrap(), "out_lifetime_start");
-                self.builder.build_call(get_var_func, &[self.ret_ptr.unwrap().into(), receiver_value.into(), self.context.i32_type().const_int(name_id.clone() as u64, false).into()], "get_cache_field");
+                self.emit_lifetime_start(self.sub_ret_ptr.unwrap(), "out_lifetime_start");
+                self.builder.build_call(get_var_func, &[self.sub_ret_ptr.unwrap().into(), receiver_value.into(), self.context.i32_type().const_int(name_id.clone() as u64, false).into()], "get_cache_field");
 
-                let out_value = self.builder.build_load(self.ret_ptr.unwrap(), "out_value").into_struct_value();
-                self.emit_lifetime_end(self.ret_ptr.unwrap(), "out_lifetime_end");
+                let out_value = self.builder.build_load(self.sub_ret_ptr.unwrap(), "out_value").into_struct_value();
+                self.emit_lifetime_end(self.sub_ret_ptr.unwrap(), "out_lifetime_end");
                 self.stack().push(out_value);
                 // self.dbg("GetVar");
                 // self.dbg_val(self.builder.build_load(out, "load_dbg").into_struct_value());
@@ -1129,10 +1129,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let src = self.stack().pop();
 
                 let args_array = self.emit_pop_stack_to_array(arg_count.clone());
-                self.emit_lifetime_start(self.arg_array_ptr.unwrap(), "args_lifetime_start");
-                self.emit_lifetime_start(self.ret_ptr.unwrap(), "out_lifetime_start");
-                self.builder.build_store(self.arg_array_ptr.unwrap(), args_array);
-                let args = self.builder.build_pointer_cast(self.arg_array_ptr.unwrap(), self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
+                self.emit_lifetime_start(self.sub_call_arg_array_ptr.unwrap(), "args_lifetime_start");
+                self.emit_lifetime_start(self.sub_ret_ptr.unwrap(), "out_lifetime_start");
+                self.builder.build_store(self.sub_call_arg_array_ptr.unwrap(), args_array);
+                let args = self.builder.build_pointer_cast(self.sub_call_arg_array_ptr.unwrap(), self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
 
                 let call_proc_by_id = self.module.get_function(INTRINSIC_CALL_PROC_BY_ID).unwrap();
 
@@ -1141,7 +1141,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_call(
                     call_proc_by_id,
                     &[
-                        self.ret_ptr.unwrap().into(), // out: *mut values::Value,
+                        self.sub_ret_ptr.unwrap().into(), // out: *mut values::Value,
                         usr.into(), // usr: values::Value,
                         self.context.i32_type().const_int(proc_call_type.clone() as u64, false).into(), // proc_type: u32,
                         self.context.i32_type().const_int(proc_id.0 as u64, false).into(), // proc_id: procs::ProcId,
@@ -1155,9 +1155,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     "call_proc_by_id",
                 );
 
-                let out_value = self.builder.build_load(self.ret_ptr.unwrap(), "call_result_value").into_struct_value();
-                self.emit_lifetime_end(self.arg_array_ptr.unwrap(),  "args_lifetime_end");
-                self.emit_lifetime_end(self.ret_ptr.unwrap(), "out_lifetime_end");
+                let out_value = self.builder.build_load(self.sub_ret_ptr.unwrap(), "call_result_value").into_struct_value();
+                self.emit_lifetime_end(self.sub_call_arg_array_ptr.unwrap(), "args_lifetime_end");
+                self.emit_lifetime_end(self.sub_ret_ptr.unwrap(), "out_lifetime_end");
 
                 self.stack().push(out_value);
             }
@@ -1165,10 +1165,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let src = self.stack().pop();
 
                 let args_array = self.emit_pop_stack_to_array(arg_count.clone());
-                self.emit_lifetime_start(self.arg_array_ptr.unwrap(), "args_lifetime_start");
-                self.emit_lifetime_start(self.ret_ptr.unwrap(), "out_lifetime_start");
-                self.builder.build_store(self.arg_array_ptr.unwrap(), args_array);
-                let args = self.builder.build_pointer_cast(self.arg_array_ptr.unwrap(), self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
+                self.emit_lifetime_start(self.sub_call_arg_array_ptr.unwrap(), "args_lifetime_start");
+                self.emit_lifetime_start(self.sub_ret_ptr.unwrap(), "out_lifetime_start");
+                self.builder.build_store(self.sub_call_arg_array_ptr.unwrap(), args_array);
+                let args = self.builder.build_pointer_cast(self.sub_call_arg_array_ptr.unwrap(), self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
 
                 let call_proc_by_name = self.module.get_function(INTRINSIC_CALL_PROC_BY_NAME).unwrap();
 
@@ -1177,7 +1177,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.builder.build_call(
                     call_proc_by_name,
                     &[
-                        self.ret_ptr.unwrap().into(), //out: *mut values::Value,
+                        self.sub_ret_ptr.unwrap().into(), //out: *mut values::Value,
                         usr.into(), //usr: values::Value,
                         self.context.i32_type().const_int(proc_call_type.clone() as u64, false).into(), //proc_type: u32,
                         self.context.i32_type().const_int(string_id.0 as u64, false).into(), //proc_name: strings::StringId,
@@ -1190,9 +1190,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     "call_proc_by_name",
                 );
 
-                let out_value = self.builder.build_load(self.ret_ptr.unwrap(), "call_result_value").into_struct_value();
-                self.emit_lifetime_end(self.arg_array_ptr.unwrap(),  "args_lifetime_end");
-                self.emit_lifetime_end(self.ret_ptr.unwrap(), "out_lifetime_end");
+                let out_value = self.builder.build_load(self.sub_ret_ptr.unwrap(), "call_result_value").into_struct_value();
+                self.emit_lifetime_end(self.sub_call_arg_array_ptr.unwrap(), "args_lifetime_end");
+                self.emit_lifetime_end(self.sub_ret_ptr.unwrap(), "out_lifetime_end");
 
                 self.stack().push(out_value);
             }
