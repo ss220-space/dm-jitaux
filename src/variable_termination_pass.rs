@@ -149,16 +149,20 @@ pub fn variable_termination_pass(ir: &mut Vec<DMIR>) {
         if values.is_empty() {
             continue;
         }
+        let mut new_ir = Vec::new();
+
         let instruction = &mut ir[pos.clone()];
         match instruction {
-            DMIR::JZ(label) | DMIR::JZInternal(label) | DMIR::JNZInternal(label) | DMIR::Jmp(label) => {
-                let mut new_ir = Vec::new();
+            DMIR::Jmp(_) => {
+                generate_variable_terminations(values, &mut new_ir);
+                // Insert terminations directly before jmp
+                ir_to_insert.push((*pos, new_ir));
+            }
+            DMIR::JZ(label) | DMIR::JZInternal(label) | DMIR::JNZInternal(label) => {
+                // Insert terminations into block after instruction, along with jump-over
                 let name = generate_variable_termination_block(*pos, label, values, &mut new_ir);
-                let old_target_label = label.clone();
-                let block_location = &analyzer.block_locations[&old_target_label];
                 *label = name;
-
-                ir_to_insert.push((block_location.position, new_ir));
+                ir_to_insert.push((pos + 1, new_ir));
             }
             _ => panic!("Unexpected instruction: {:?}", instruction)
         }
@@ -182,7 +186,16 @@ pub fn variable_termination_pass(ir: &mut Vec<DMIR>) {
 /// returns: name of generated block
 fn generate_variable_termination_block(from: usize, label: &str, values_to_unset: &Vec<ValueLocation>, ir_to_append: &mut Vec<DMIR>) -> String {
     let name = format!("lt_from_{}_to_{}", from, label);
+    let after_block_name = format!("lt_next_from_{}", from);
+    ir_to_append.push(DMIR::Jmp(after_block_name.clone()));
     ir_to_append.push(DMIR::EnterBlock(name.clone()));
+    generate_variable_terminations(values_to_unset, ir_to_append);
+    ir_to_append.push(DMIR::Jmp(label.to_string()));
+    ir_to_append.push(DMIR::EnterBlock(after_block_name));
+    return name
+}
+
+fn generate_variable_terminations(values_to_unset: &Vec<ValueLocation>, ir_to_append: &mut Vec<DMIR>) {
     for location in values_to_unset {
         match location {
             ValueLocation::Stack(_) => panic!(),
@@ -190,8 +203,6 @@ fn generate_variable_termination_block(from: usize, label: &str, values_to_unset
             ValueLocation::Local(idx) => ir_to_append.push(DMIR::UnsetLocal(*idx))
         }
     }
-    ir_to_append.push(DMIR::Jmp(label.to_string()));
-    return name
 }
 
 #[derive(Clone, Ord, Eq, PartialOrd, PartialEq, Debug)]
@@ -274,16 +285,10 @@ struct BlockData<'t> {
     value_phi: HashMap<ValueLocation, &'t ValuePhi<'t>>
 }
 
-#[derive(Debug)]
-struct BlockLocation {
-    position: usize
-}
-
 struct AnalyzerState<'t> {
     phi_id: Box<usize>,
     arena: &'t Arena<ValuePhi<'t>>,
     blocks: HashMap<String, BlockData<'t>>,
-    block_locations: HashMap<String, BlockLocation>,
     value_sources: HashMap<ValueLocation, ValueSource<'t>>,
     all_phi: Vec<&'t ValuePhi<'t>>
 }
@@ -294,7 +299,6 @@ impl <'t> AnalyzerState<'t> {
             phi_id: Box::new(0),
             arena,
             blocks: HashMap::new(),
-            block_locations: HashMap::new(),
             value_sources: HashMap::new(),
             all_phi: Vec::new()
         }
@@ -369,9 +373,6 @@ impl <'t> AnalyzerState<'t> {
                 }
                 DMIR::EnterBlock(label) => {
                     assert!(block_ended, "fallthrough termination incorrect");
-                    self.block_locations.insert(label.clone(), BlockLocation {
-                        position: pos
-                    });
 
                     block_ended = false;
                     self.value_sources.clear();
