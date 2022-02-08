@@ -187,11 +187,26 @@ fn compile_proc<'ctx>(
     log::debug!("variable_termination_pass done");
     generate_ref_count_operations(&mut irs);
     log::debug!("ref_count_pass done");
-    let mut max_arg_count = 0;
-    for ir in &irs {
-        if let DMIR::CallProcById(_, _, arg_count) | DMIR::CallProcByName(_, _, arg_count) = ir {
-            max_arg_count = max(max_arg_count, *arg_count)
+
+    fn compute_max_sub_call_arg_count(ir: &DMIR, max_sub_call_arg_count: &mut u32) {
+        match ir {
+            DMIR::CallProcById(_, _, arg_count) | DMIR::CallProcByName(_, _, arg_count) => {
+                *max_sub_call_arg_count = max(*max_sub_call_arg_count, *arg_count);
+            }
+            DMIR::IncRefCount { target: _, op } |
+            DMIR::DecRefCount { target: _, op } |
+            DMIR::InfLoopCheckDeopt(op) |
+            DMIR::ListCheckSizeDeopt(_, _, op) |
+            DMIR::CheckTypeDeopt(_, _, op) => {
+                compute_max_sub_call_arg_count(op, max_sub_call_arg_count);
+            }
+            _ => {}
         }
+    }
+
+    let mut max_sub_call_arg_count = 0;
+    for ir in &irs {
+        compute_max_sub_call_arg_count(ir, &mut max_sub_call_arg_count);
     }
     // Prepare LLVM internals for code-generation
     let mut code_gen = CodeGen::create(
@@ -209,7 +224,7 @@ fn compile_proc<'ctx>(
     let proc_id_attr = context.create_string_attribute("proc_id", format!("{}", proc.id.0).as_str());
     func.add_attribute(AttributeLoc::Function, proc_id_attr);
 
-    code_gen.emit_prologue(func, max_arg_count);
+    code_gen.emit_prologue(func, max_sub_call_arg_count);
     // Emit LLVM IR nodes from DMIR
     for ir in irs {
         log::debug!("emit: {:?}", &ir);
