@@ -1,23 +1,30 @@
-use auxtools::{Value, Proc};
-use auxtools::DMResult;
-use dmasm::{format_disassembly};
-use inkwell::context::Context;
-use inkwell::execution_engine::{ExecutionEngine};
-use inkwell::module::Module;
-use inkwell::values::AnyValue;
-use inkwell::OptimizationLevel;
-use crate::{DisassembleEnv, guard, dmir, ByondProcFunc, chad_hook_by_id};
-use std::mem::transmute_copy;
-use inkwell::passes::PassManager;
-use std::ptr::NonNull;
+use std::borrow::Borrow;
+use std::cmp::max;
 use std::marker::PhantomPinned;
+use std::mem::transmute_copy;
 use std::pin::Pin;
+use std::ptr::NonNull;
+
+use auxtools::{Proc, Value};
+use auxtools::DMResult;
 use auxtools::raw_types::procs::ProcId;
 use auxtools::raw_types::values::ValueTag;
-use crate::codegen::CodeGen;
+use dmasm::format_disassembly;
 use inkwell::attributes::AttributeLoc;
-use crate::variable_termination_pass::variable_termination_pass;
+use inkwell::context::Context;
+use inkwell::execution_engine::ExecutionEngine;
+use inkwell::module::Module;
+use inkwell::OptimizationLevel;
+use inkwell::passes::PassManager;
+use inkwell::values::AnyValue;
+
+use crate::{ByondProcFunc, chad_hook_by_id, DisassembleEnv, dmir, guard};
+use crate::codegen::CodeGen;
+use crate::dmir::DMIR;
+use crate::dmir::DMIR::CallProcById;
+use crate::inventory::iter;
 use crate::ref_count::generate_ref_count_operations;
+use crate::variable_termination_pass::variable_termination_pass;
 
 #[hook("/proc/dmjit_compile_proc")]
 pub fn compile_and_call(proc_name: auxtools::Value) -> DMResult {
@@ -183,6 +190,12 @@ fn compile_proc<'ctx>(
     log::debug!("variable_termination_pass done");
     generate_ref_count_operations(&mut irs);
     log::debug!("ref_count_pass done");
+    let mut max_arg_count = 0;
+    for ir in &irs {
+        if let DMIR::CallProcById(_, _, arg_count) = ir {
+            max_arg_count = max(max_arg_count, *arg_count)
+        }
+    }
     // Prepare LLVM internals for code-generation
     let mut code_gen = CodeGen::create(
         context,
@@ -199,7 +212,7 @@ fn compile_proc<'ctx>(
     let proc_id_attr = context.create_string_attribute("proc_id", format!("{}", proc.id.0).as_str());
     func.add_attribute(AttributeLoc::Function, proc_id_attr);
 
-    code_gen.emit_prologue(func);
+    code_gen.emit_prologue(func, max_arg_count);
     // Emit LLVM IR nodes from DMIR
     for ir in irs {
         log::debug!("emit: {:?}", &ir);
