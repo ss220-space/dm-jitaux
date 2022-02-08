@@ -1165,22 +1165,19 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let src = self.stack().pop();
 
                 let args_array = self.emit_pop_stack_to_array(arg_count.clone());
-                let args_ptr = self.builder.build_alloca(args_array.get_type(), "args_ptr");
-                self.emit_lifetime_start(args_ptr,  "args_lifetime_start");
-                self.builder.build_store(args_ptr, args_array);
-                let args = self.builder.build_pointer_cast(args_ptr, self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
+                self.emit_lifetime_start(self.arg_array_ptr.unwrap(), "args_lifetime_start");
+                self.emit_lifetime_start(self.ret_ptr.unwrap(), "out_lifetime_start");
+                self.builder.build_store(self.arg_array_ptr.unwrap(), args_array);
+                let args = self.builder.build_pointer_cast(self.arg_array_ptr.unwrap(), self.val_type.ptr_type(AddressSpace::Generic), "to_ptr");
 
                 let call_proc_by_name = self.module.get_function(INTRINSIC_CALL_PROC_BY_NAME).unwrap();
 
                 let usr = func.get_nth_param(2).unwrap().into_struct_value(); // TODO: Proc can change self usr
 
-                let out = self.builder.build_alloca(self.val_type, "call_result");
-                self.emit_lifetime_start(out, "out_lifetime_start");
-
                 self.builder.build_call(
                     call_proc_by_name,
                     &[
-                        out.into(), //out: *mut values::Value,
+                        self.ret_ptr.unwrap().into(), //out: *mut values::Value,
                         usr.into(), //usr: values::Value,
                         self.context.i32_type().const_int(proc_call_type.clone() as u64, false).into(), //proc_type: u32,
                         self.context.i32_type().const_int(string_id.0 as u64, false).into(), //proc_name: strings::StringId,
@@ -1193,9 +1190,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     "call_proc_by_name",
                 );
 
-                let out_value = self.builder.build_load(out, "call_result_value").into_struct_value();
-                self.emit_lifetime_end(args_ptr,  "args_lifetime_end");
-                self.emit_lifetime_end(out, "out_lifetime_end");
+                let out_value = self.builder.build_load(self.ret_ptr.unwrap(), "call_result_value").into_struct_value();
+                self.emit_lifetime_end(self.arg_array_ptr.unwrap(),  "args_lifetime_end");
+                self.emit_lifetime_end(self.ret_ptr.unwrap(), "out_lifetime_end");
 
                 self.stack().push(out_value);
             }

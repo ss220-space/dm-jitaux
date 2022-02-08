@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::cmp::max;
 use std::marker::PhantomPinned;
 use std::mem::transmute_copy;
@@ -21,8 +20,6 @@ use inkwell::values::AnyValue;
 use crate::{ByondProcFunc, chad_hook_by_id, DisassembleEnv, dmir, guard};
 use crate::codegen::CodeGen;
 use crate::dmir::DMIR;
-use crate::dmir::DMIR::CallProcById;
-use crate::inventory::iter;
 use crate::ref_count::generate_ref_count_operations;
 use crate::variable_termination_pass::variable_termination_pass;
 
@@ -192,7 +189,7 @@ fn compile_proc<'ctx>(
     log::debug!("ref_count_pass done");
     let mut max_arg_count = 0;
     for ir in &irs {
-        if let DMIR::CallProcById(_, _, arg_count) = ir {
+        if let DMIR::CallProcById(_, _, arg_count) | DMIR::CallProcByName(_, _, arg_count) = ir {
             max_arg_count = max(max_arg_count, *arg_count)
         }
     }
