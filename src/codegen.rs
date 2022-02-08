@@ -726,7 +726,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
     }
 
-    pub fn emit_prologue(&mut self, func: FunctionValue<'ctx>, max_arg_count: u32) {
+    pub fn emit_prologue(&mut self, func: FunctionValue<'ctx>, max_sub_call_arg_count: u32) {
         let val_ptr_type = self.val_type.ptr_type(AddressSpace::Generic);
 
         self.builder.build_store(func.get_nth_param(0).unwrap().into_pointer_value(), self.val_type.const_zero()); // initialize out
@@ -800,7 +800,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
         self.args = Option::Some(args_ptr_phi.as_basic_value().into_pointer_value());
 
-        self.sub_call_arg_array_ptr = Option::Some(self.builder.build_alloca(self.val_type.array_type(max_arg_count as u32), "proc_args_ptr"));
+        self.sub_call_arg_array_ptr = Option::Some(self.builder.build_alloca(self.val_type.array_type(max_sub_call_arg_count as u32), "proc_args_ptr"));
         self.sub_ret_ptr = Option::Some(self.builder.build_alloca(self.val_type, "proc_ret_ptr"));
     }
 
