@@ -236,7 +236,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     false
                 );
                 let get_variable_func = self.module.add_function(INTRINSIC_GET_VARIABLE, get_variable_signature, Some(Linkage::External));
-                get_variable_func.add_attribute(AttributeLoc::Function, self.context.create_enum_attribute(41, 1));
+                get_variable_func.add_attribute(AttributeLoc::Param(0), self.context.create_enum_attribute(self.context.get_kind_id("writeonly"), 1));
                 self.execution_engine.add_global_mapping(&get_variable_func, auxtools::raw_types::funcs::get_variable as usize);
             }
 
