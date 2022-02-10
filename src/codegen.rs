@@ -1,5 +1,4 @@
 use std::borrow::Borrow;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use auxtools::Proc;
@@ -12,8 +11,9 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::execution_engine::ExecutionEngine;
 use inkwell::module::{Linkage, Module};
-use inkwell::types::StructType;
-use inkwell::values::{AnyValue, ArrayValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
+use inkwell::types::{StructType};
+use inkwell::values::{AnyValue, ArrayValue, BasicValue, BasicValueEnum, FloatValue, FunctionValue, IntValue, PhiValue, PointerValue, StructValue};
+
 
 use crate::dmir::{DMIR, RefOpDisposition, ValueLocation, ValueTagPredicate};
 use crate::pads;
@@ -53,10 +53,10 @@ const INTRINSIC_DEC_REF_COUNT: &str = "<intrinsic>/dec_ref_count";
 
 struct LabelBlockInfo<'ctx> {
     block: BasicBlock<'ctx>,
-    phi: Vec<PhiValue<'ctx>>,
-    cache_phi: Option<PhiValue<'ctx>>,
-    loop_iter_counter_phi: PhiValue<'ctx>,
-    locals_phi: HashMap<u32, PhiValue<'ctx>>
+    locals: HashMap<u32, PhiValue<'ctx>>,
+    stack: Vec<PhiValue<'ctx>>,
+    cache: Option<PhiValue<'ctx>>,
+    loop_iter_counter: Option<PhiValue<'ctx>>
 }
 
 #[derive(Clone)]
@@ -137,89 +137,98 @@ macro_rules! decl_intrinsic {
 struct BlockBuilder<'ctx, 'a> {
     context: &'ctx Context,
     builder: &'a Builder<'ctx>,
-    val_type: &'a StructType<'ctx>,
-    block_map: &'a mut BlockMap<'ctx>
+    val_type: &'a StructType<'ctx>
 }
+
+struct CodeGenValuesRef<'ctx, 'a> {
+    stack: &'a Vec<StructValue<'ctx>>,
+    locals: &'a HashMap<u32, StructValue<'ctx>>,
+    cache: &'a Option<StructValue<'ctx>>,
+    loop_iter_counter: &'a IntValue<'ctx>,
+}
+
+macro_rules! create_code_gen_values_ref {
+    ($code_gen:ident) => {
+        CodeGenValuesRef {
+            stack: &$code_gen.stack_loc,
+            locals: &$code_gen.locals,
+            cache: &$code_gen.cache,
+            loop_iter_counter: &$code_gen.loop_iter_counter,
+        }
+    };
+}
+
 
 impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
 
-    fn emit_jump_target_block(
+    fn merge_vec(&self, target: &mut Vec<PhiValue<'ctx>>, source: &Vec<StructValue<'ctx>>, phi_name: &str, source_block: BasicBlock<'ctx>, is_new_block: bool) {
+        if is_new_block {
+            target.resize_with(source.len(), || self.builder.build_phi(self.val_type.clone(), phi_name));
+        } else {
+            assert_eq!(source.len(), target.len(), "values count mismatch when creating {}", phi_name);
+        }
+        for (idx, arg) in source.into_iter().enumerate() {
+            target[idx].add_incoming(&[(arg, source_block)])
+        }
+    }
+
+    fn merge_option<V: BasicValue<'ctx>>(&self, target: &mut Option<PhiValue<'ctx>>, source: &Option<V>, phi_name: &str, source_block: BasicBlock<'ctx>, is_new_block: bool) {
+        if is_new_block {
+            if let Some(source_value) = source {
+                *target = Some(self.builder.build_phi(source_value.as_basic_value_enum().get_type(), phi_name));
+            }
+        } else {
+            assert_eq!(source.is_some(), target.is_some(), "value presence differs when creating {}", phi_name)
+        }
+        if let Some(target) = target {
+            let source = source.as_ref().unwrap();
+            target.add_incoming(&[(source, source_block)])
+        }
+    }
+
+    fn emit_jump_target_block<'b>(
         &'a mut self,
-        stack_loc: &Vec<StructValue<'ctx>>,
-        locals: &HashMap<u32, StructValue<'ctx>>,
-        cache_data: &Option<StructValue<'ctx>>,
-        loop_iter_counter: &IntValue<'ctx>,
+        block_map: &'b mut BlockMap<'ctx>,
+        values: CodeGenValuesRef<'ctx, '_>,
         func: FunctionValue<'ctx>,
         lbl: &String
-    ) -> &'a LabelBlockInfo<'ctx> {
+    ) -> &'b LabelBlockInfo<'ctx> {
         let current_block = self.builder.get_insert_block().unwrap();
-        let stack = stack_loc;
 
-        let val_type = self.val_type;
-        let builder = self.builder;
-
-        let label_block_info = match self.block_map.entry(lbl.clone()) {
-            Entry::Occupied(v) => {
-                v.into_mut()
-            }
-            Entry::Vacant(v) => {
-                let current_block = builder.get_insert_block().unwrap();
-                let new_block = self.context.append_basic_block(func, lbl);
-
-                builder.position_at_end(new_block);
-                let mut phi: Vec<PhiValue<'ctx>> = Vec::new();
-                for _ in 0..stack.len() {
-                    phi.push(builder.build_phi(val_type.clone(), "stack_loc"));
+        let mut new_block_created = false;
+        let context = self.context;
+        let entry = block_map.entry(lbl.clone())
+            .or_insert_with(|| {
+                new_block_created = true;
+                LabelBlockInfo {
+                    block: context.append_basic_block(func, lbl),
+                    locals: Default::default(),
+                    stack: vec![],
+                    cache: None,
+                    loop_iter_counter: None
                 }
-
-                let mut locals_phi = HashMap::new();
-                for (idx, _) in locals {
-                    locals_phi.insert(idx.clone(), builder.build_phi(val_type.clone(), "local_phi"));
-                }
-
-                let cache_phi = if cache_data.is_some() {
-                    Option::Some(builder.build_phi(val_type.clone(), "cache_phi"))
-                } else {
-                    Option::None
-                };
-
-                let loop_iter_counter_phi = builder.build_phi(self.context.i32_type().clone(), "loop_iter_counter_phi");
-
-                builder.position_at_end(current_block);
+            });
 
 
+        self.builder.position_at_end(entry.block);
 
-                let target_info =
-                    LabelBlockInfo {
-                        block: new_block,
-                        phi,
-                        locals_phi,
-                        loop_iter_counter_phi,
-                        cache_phi
-                    };
-                v.insert(target_info)
-            }
-        };
-
-
-        assert_eq!(stack.len(), label_block_info.phi.len(), "stack unaligned");
-        for (idx, loc) in stack.iter().enumerate() {
-            label_block_info.phi[idx].add_incoming(&[(loc, current_block)]);
+        for (idx, value) in values.locals {
+            entry.locals.entry(*idx)
+                .or_insert_with(|| {
+                    assert!(new_block_created, "locals mismatch when creating phi");
+                    self.builder.build_phi(self.val_type.clone(), "local_phi")
+                })
+                .add_incoming(&[(value, current_block)])
         }
 
-        for (idx, local) in locals {
-            let local_phi = label_block_info.locals_phi[&idx];
-            local_phi.add_incoming(&[(local, current_block)]);
-        }
+        self.merge_vec(&mut entry.stack, values.stack, "stack_phi", current_block, new_block_created);
 
-        if let Some(cache) = cache_data {
-            label_block_info.cache_phi.unwrap().add_incoming(&[(cache, current_block)]);
-        }
+        self.merge_option(&mut entry.cache, values.cache, "cache_phi", current_block, new_block_created);
+        self.merge_option(&mut entry.loop_iter_counter, &Some(values.loop_iter_counter.clone()), "loop_iter_counter_phi", current_block, new_block_created);
 
-        label_block_info.loop_iter_counter_phi.add_incoming(&[(loop_iter_counter, current_block)]);
+        self.builder.position_at_end(current_block);
 
-
-        label_block_info
+        entry
     }
 }
 
@@ -634,13 +643,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
     fn emit_conditional_jump(&mut self, func: FunctionValue<'ctx>, lbl: &String, condition: IntValue<'ctx>) {
         let next = self.context.append_basic_block(func, "next");
 
+        let values = create_code_gen_values_ref!(self);
         let mut block_builder = BlockBuilder {
             context: self.context,
             builder: &self.builder,
-            val_type: &self.val_type,
-            block_map: &mut self.block_map
+            val_type: &self.val_type
         };
-        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, &self.loop_iter_counter, func, lbl);
+        let target = block_builder.emit_jump_target_block(&mut self.block_map, values, func, lbl);
         let target_block = target.block.clone();
 
         self.builder.build_conditional_branch(
@@ -873,13 +882,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     to_linear(predicate, &mut predicates);
 
                     for predicate in predicates {
+                        let values = create_code_gen_values_ref!(self);
                         let mut block_builder = BlockBuilder {
                             context: self.context,
                             builder: &self.builder,
                             val_type: &self.val_type,
-                            block_map: &mut self.block_map,
                         };
-                        let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, &self.loop_iter_counter, func, block).block;
+                        let target = block_builder.emit_jump_target_block(&mut self.block_map, values, func, block).block;
                         if let ValueTagPredicate::Tag(t) = predicate {
                             jumps.push((self.const_tag(t), target))
                         } else if matches!(predicate, ValueTagPredicate::Any) {
@@ -1384,13 +1393,13 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.emit_conditional_jump(func, lbl, self.internal_test_flag.unwrap())
             }
             DMIR::Jmp(lbl) => {
+                let values = create_code_gen_values_ref!(self);
                 let mut block_builder = BlockBuilder {
                     context: self.context,
                     builder: &self.builder,
                     val_type: &self.val_type,
-                    block_map: &mut self.block_map
                 };
-                let target = block_builder.emit_jump_target_block(&self.stack_loc, &self.locals, &self.cache, &self.loop_iter_counter, func, lbl);
+                let target = block_builder.emit_jump_target_block(&mut self.block_map, values, func, lbl);
                 self.builder.build_unconditional_branch(target.block);
                 self.block_ended = true;
             }
@@ -1398,28 +1407,30 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 assert!(self.block_ended, "no direct fallthrough allowed");
                 let target = self.block_map.get(lbl).unwrap();
 
-                self.test_res = None;
-                self.stack_loc.clear();
-                self.locals.clear();
-                for phi in target.phi.iter() {
-                    self.stack_loc.push(phi.as_basic_value().into_struct_value());
-                }
-
-                for (idx, phi) in target.locals_phi.iter() {
-                    self.locals.insert(idx.clone(), phi.as_basic_value().into_struct_value());
-                }
-
-                if let Some(cache) = target.cache_phi {
-                    self.cache = Option::Some(cache.as_basic_value().into_struct_value())
-                }
-
-                self.loop_iter_counter = target.loop_iter_counter_phi.as_basic_value().into_int_value();
-
                 if !self.block_ended {
                     self.builder.build_unconditional_branch(target.block);
                 }
                 self.block_ended = false;
+
+                self.test_res = None;
+                self.stack_loc.clear();
+                self.locals.clear();
+                self.cache = None;
+
                 self.builder.position_at_end(target.block);
+
+                self.locals.extend(
+                    target.locals.iter().map(|(idx, phi)| (*idx, phi.as_basic_value().into_struct_value()))
+                );
+                self.stack_loc.extend(
+                    target.stack.iter().map(|phi| phi.as_basic_value().into_struct_value())
+                );
+
+                if let Some(cache_phi) = &target.cache {
+                    self.cache = Some(cache_phi.as_basic_value().into_struct_value());
+                }
+
+                self.loop_iter_counter = target.loop_iter_counter.as_ref().unwrap().as_basic_value().into_int_value();
             }
             DMIR::End => {
                 if !self.block_ended {
