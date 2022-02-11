@@ -570,9 +570,10 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::TestInternal); // a b
                         irs.push(DMIR::JZInternal(lab.0)); // a b
                         irs.push(DMIR::Swap); // b a
+                        irs.push(DMIR::Dup); // b a a
+                        decode_set_var(&var, &mut irs); // b a
                         irs.push(DMIR::FloatInc); //b (a+1)
-                        irs.push(DMIR::DupX1); // (a+1) b (a+1)
-                        decode_set_var(&var, &mut irs); // (a+1) b
+                        irs.push(DMIR::Swap); // (a+1) b
                     }
                     Instruction::ForRangeStep(lab, var) => {
                         // a - counter, b - upper bound, c - step
@@ -585,13 +586,13 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::TestInternal); // a b c
                         irs.push(DMIR::JZInternal(lab.0)); // a b c
                         irs.push(DMIR::SwapX1); // b c a
+                        irs.push(DMIR::Dup); // b c a a
+                        decode_set_var(&var, &mut irs); // b c a
                         irs.push(DMIR::Swap); // b a c
                         irs.push(DMIR::DupX2); // c b a c
                         irs.push(DMIR::FloatAdd); // c b (a+c)
-                        irs.push(DMIR::DupX2); // (a+c) c b (a+c)
-                        irs.push(DMIR::SwapX1); // (a+c) b (a+c) c
-                        irs.push(DMIR::Swap); // (a+c) b c (a+c)
-                        decode_set_var(&var, &mut irs); // (a+c) b c
+                        irs.push(DMIR::Swap); // c (a+c) b
+                        irs.push(DMIR::SwapX1); // (a+c) b c
                     }
                     _ => {
                         log::info!("Unsupported insn {}", insn);
