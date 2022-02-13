@@ -12,6 +12,7 @@ use dmasm::format_disassembly;
 use inkwell::attributes::AttributeLoc;
 use inkwell::context::Context;
 use inkwell::execution_engine::ExecutionEngine;
+use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::module::Module;
 use inkwell::OptimizationLevel;
 use inkwell::passes::PassManager;
@@ -72,6 +73,11 @@ pub fn install_hooks() -> DMResult {
             let execution_engine = val.execution_engine.as_ref().unwrap();
             let module = val.module.as_ref().unwrap();
 
+            let mpm = PassManager::create(());
+
+            mpm.add_always_inliner_pass();
+            mpm.run_on(module);
+
             log::info!("Module {}", module.print_to_string().to_string());
 
             let mut curr_function = module.get_first_function();
@@ -79,7 +85,7 @@ pub fn install_hooks() -> DMResult {
                 if let Some(func_value) = curr_function {
                     let name = func_value.get_name().to_str().unwrap();
 
-                    if !name.starts_with("<intrinsic>/") && func_value.get_intrinsic_id() == 0 {
+                    if !name.starts_with("<intrinsic>/") && !name.starts_with("dmir.intrinsic") && func_value.get_intrinsic_id() == 0 {
                         log::info!("installing {}", name);
                         installed.push(name.to_string());
                         let func: ByondProcFunc = unsafe {
@@ -137,7 +143,13 @@ impl ModuleContext<'static> {
 
         let context_ref = NonNull::from(&boxed.context);
 
-        let module = unsafe { context_ref.as_ref() }.create_module("dmir");
+        let buf = MemoryBuffer::create_from_memory_range(include_bytes!("../target/runtime.bc"), "runtime.ll");
+        let module =
+            unsafe { context_ref.as_ref() }
+                .create_module_from_ir(buf).unwrap();
+
+        module.set_name("dmir");
+
         let execution_engine = module.create_jit_execution_engine(OptimizationLevel::Default).unwrap();
 
 
