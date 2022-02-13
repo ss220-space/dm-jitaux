@@ -384,10 +384,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
 
             {
-                let dec_ref_count_sig = self.context.i8_type().fn_type(&[
-                    self.val_type.into()
-                ], false);
-                let dec_ref_count_func = self.module.add_function(INTRINSIC_DEC_REF_COUNT, dec_ref_count_sig, None);
+                let dec_ref_count_func = self.module.get_function(INTRINSIC_DEC_REF_COUNT).unwrap();
                 self.execution_engine.add_global_mapping(&dec_ref_count_func, auxtools::raw_types::funcs::dec_ref_count as usize)
             }
         }

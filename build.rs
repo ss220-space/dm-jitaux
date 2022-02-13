@@ -1,3 +1,4 @@
+use std::process::{Command};
 use anyhow::Result;
 use vergen::{Config, TimeZone, vergen};
 
@@ -15,6 +16,14 @@ fn main() -> Result<()> {
         println!("cargo:rustc-env=DMJIT_LOG_PREFIX=");
     }
     //println!("cargo:rustc-cfg=debug_on_call_print");
+
+    let mut child = Command::new("llvm-as")
+        .arg("src/runtime.ll")
+        .arg("-o")
+        .arg("target/runtime.bc")
+        .spawn().unwrap();
+
+    assert_eq!(child.wait().unwrap().success(), true);
 
 
     vergen(config)
