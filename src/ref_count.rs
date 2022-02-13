@@ -57,6 +57,7 @@ struct BasicBlockNodes<'t> {
     stack_phi: Vec<&'t RValue<'t>>,
     cache_phi: Option<&'t RValue<'t>>,
     locals_phi: HashMap<u32, &'t RValue<'t>>,
+    args_phi: Vec<&'t RValue<'t>>
 }
 
 impl<'t> RValue<'t> {
@@ -109,6 +110,7 @@ struct Analyzer<'t> {
     drains: Vec<RValueDrain<'t>>,
     values: Vec<&'t RValue<'t>>,
     locals: HashMap<u32, &'t RValue<'t>>,
+    args: Vec<&'t RValue<'t>>,
     blocks: HashMap<String, BasicBlockNodes<'t>>,
     phi_id: u32,
     block_ended: bool
@@ -132,6 +134,7 @@ impl<'t> Analyzer<'t> {
         stack: &Vec<&'t RValue<'t>>,
         cache: &Option<&'t RValue<'t>>,
         locals: &HashMap<u32, &'t RValue<'t>>,
+        args: &Vec<&'t RValue<'t>>,
         values_arena: &'t Arena<RValue<'t>>,
         phi_id: &mut u32,
         blocks: &mut HashMap<String, BasicBlockNodes<'t>>,
@@ -151,6 +154,12 @@ impl<'t> Analyzer<'t> {
 
                 for (idx, value) in locals {
                     if let Phi(_, incoming) = v.locals_phi.get_mut(idx).unwrap() {
+                        incoming.borrow_mut().push(value);
+                    }
+                }
+
+                for (i, value) in args.iter().enumerate() {
+                    if let Phi(_, incoming) = v.args_phi.get_mut(i).unwrap() {
                         incoming.borrow_mut().push(value);
                     }
                 }
@@ -175,7 +184,11 @@ impl<'t> Analyzer<'t> {
                         locals_phi: locals.iter().map(|(idx, v)| {
                             let node = RValue::new_phi(phi_id, v);
                             (idx.clone(), &*values_arena.alloc(node))
-                        }).collect()
+                        }).collect(),
+                        args_phi: args.iter().map(|f| {
+                            let node = RValue::new_phi(phi_id, f);
+                            &*values_arena.alloc(node)
+                        }).collect(),
                     }
                 );
             }
@@ -253,8 +266,11 @@ impl<'t> Analyzer<'t> {
                 if let Some(cache) = self.cache.as_ref() {
                     self.drains.push(ConsumeDrain(pos, cache, DecRefOp::Pre(ValueLocation::Cache)))
                 }
-                for (idx, value) in self.locals.clone() {
-                    self.drains.push(ConsumeDrain(pos, value, DecRefOp::Pre(ValueLocation::Local(idx))))
+                for (idx, value) in self.locals.iter() {
+                    self.drains.push(ConsumeDrain(pos, *value, DecRefOp::Pre(ValueLocation::Local(*idx))))
+                }
+                for (idx, value) in self.args.iter().enumerate() {
+                    self.drains.push(ConsumeDrain(pos, value, DecRefOp::Pre(ValueLocation::Argument(idx as u32))))
                 }
             }
         }
@@ -283,10 +299,11 @@ impl<'t> Analyzer<'t> {
                     @produce @stack
                 );
             }
-            DMIR::SetArg(_) => {
-                op_effect!(
-                    @move_out @stack
-                )
+            DMIR::SetArg(idx) => {
+                let value = self.stack.pop().unwrap();
+                let arg_value = &mut self.args[*idx as usize];
+                self.drains.push(RValueDrain::ConsumeDrain(pos, arg_value, DecRefOp::Pre(ValueLocation::Argument(*idx))));
+                *arg_value = value;
             }
             DMIR::SetCache => {
                 let prev = self.cache.replace(self.stack.pop().unwrap());
@@ -315,6 +332,7 @@ impl<'t> Analyzer<'t> {
                         &self.stack,
                         &self.cache,
                         &self.locals,
+                        &self.args,
                         &self.values_arena,
                         &mut self.phi_id,
                         &mut self.blocks, block.clone())
@@ -398,6 +416,7 @@ impl<'t> Analyzer<'t> {
                     &self.stack,
                     &self.cache,
                     &self.locals,
+                    &self.args,
                     &self.values_arena,
                     &mut self.phi_id,
                     &mut self.blocks,
@@ -434,6 +453,7 @@ impl<'t> Analyzer<'t> {
                 self.stack = block.stack_phi.clone();
                 self.locals = block.locals_phi.clone();
                 self.cache = block.cache_phi;
+                self.args = block.args_phi.clone();
             }
             DMIR::Deopt(_, _) => {
                 if let Some(value) = self.cache {
@@ -504,6 +524,7 @@ impl<'t> Analyzer<'t> {
                     &self.stack,
                     &self.cache,
                     &self.locals,
+                    &self.args,
                     self.values_arena.borrow(),
                     &mut self.phi_id,
                     &mut self.blocks,
@@ -583,7 +604,7 @@ fn create_inc_ref_count_ir(inner_instruction: DMIR, op: &IncRefOp) -> DMIR {
     }
 }
 
-pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
+pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>, parameter_count: usize) {
 
     let arena = Arena::new();
     let mut analyzer = Analyzer {
@@ -593,10 +614,20 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>) {
         drains: vec![],
         values: vec![],
         locals: Default::default(),
+        args: vec![],
         blocks: Default::default(),
         phi_id: 0,
         block_ended: false
     };
+
+    {
+        let values = &mut analyzer.values;
+        analyzer.args.resize_with(parameter_count, || {
+            let value = arena.alloc(RValue::MovedInSource(0));
+            values.push(value);
+            value
+        });
+    }
 
     analyzer.analyze_instructions(ir);
 

@@ -11,7 +11,9 @@
     compile_proc(/datum/base/proc/call_nested)
     compile_proc(/datum/base/proc/two_arg)
     compile_proc(/datum/base/proc/unbalanced_if)
-    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret, /deopt_arg, /datum/base/deopt_src, /datum/base/call_nested, /datum/base/two_arg, /datum/base/unbalanced_if
+    compile_proc(/proc/moves_arg)
+    compile_proc(/proc/excess_args)
+    CHECK_INSTALL_COMPILED // RES: /receive_datum, /access_datum, /pass_datum, /store_restore_datum, /deopt_ret, /deopt_arg, /datum/base/deopt_src, /datum/base/call_nested, /datum/base/two_arg, /datum/base/unbalanced_if, /moves_arg, /excess_args
 
     var/datum/base/dt_local = new
     var/datum/base/dt_local_two = new
@@ -58,6 +60,14 @@
     dt_local.unbalanced_if_wrap(TRUE)
     CLEAR_CACHE_VAR
     RES_CHECK_LEAK(dt_local) // RES: OK
+
+    moves_arg(dt_local, dt_local_two)
+    RES_CHECK_LEAK(dt_local) // RES: OK
+    RES_CHECK_LEAK(dt_local_two) // RES: OK
+
+    excess_args(dt_local, dt_local_two)
+    RES_CHECK_LEAK(dt_local) // RES: OK
+    RES_CHECK_LEAK(dt_local_two) // RES: OK
 
 /datum/base
     var/dt_next = null
@@ -120,6 +130,13 @@
 /datum/base/proc/deopt_src()
     dm_jitaux_deopt()
     src
+
+/proc/moves_arg(a, b)
+    a = b
+    return a
+
+/proc/excess_args(a)
+    return a
 
 // Intrinsic to emulate deopt
 /proc/dm_jitaux_deopt()

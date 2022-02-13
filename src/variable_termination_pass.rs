@@ -198,9 +198,9 @@ fn generate_variable_termination_block(from: usize, label: &str, values_to_unset
 fn generate_variable_terminations(values_to_unset: &Vec<ValueLocation>, ir_to_append: &mut Vec<DMIR>) {
     for location in values_to_unset {
         match location {
-            ValueLocation::Stack(_) => panic!(),
+            ValueLocation::Stack(_) | ValueLocation::Argument(_) => panic!(),
             ValueLocation::Cache => ir_to_append.push(DMIR::UnsetCache),
-            ValueLocation::Local(idx) => ir_to_append.push(DMIR::UnsetLocal(*idx))
+            ValueLocation::Local(idx) => ir_to_append.push(DMIR::UnsetLocal(*idx)),
         }
     }
 }

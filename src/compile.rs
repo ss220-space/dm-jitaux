@@ -197,7 +197,7 @@ fn compile_proc<'ctx>(
     log::debug!("DMIR created");
     variable_termination_pass(&mut irs);
     log::debug!("variable_termination_pass done");
-    generate_ref_count_operations(&mut irs);
+    generate_ref_count_operations(&mut irs, proc.parameter_names().len());
     log::debug!("ref_count_pass done");
 
     fn compute_max_sub_call_arg_count(ir: &DMIR, max_sub_call_arg_count: &mut u32) {
