@@ -92,7 +92,8 @@ pub enum RefOpDisposition {
 pub enum ValueLocation {
     Stack(u8),
     Cache,
-    Local(u32)
+    Local(u32),
+    Argument(u32)
 }
 
 macro_rules! type_switch {

@@ -36,7 +36,7 @@ pub struct CodeGen<'ctx, 'a> {
     block_ended: bool,
     parameter_count: u32,
     local_count: u32,
-    args: Option<PointerValue<'ctx>>
+    args: Vec<StructValue<'ctx>>
 }
 
 type BlockMap<'ctx> = HashMap<String, LabelBlockInfo<'ctx>>;
@@ -53,6 +53,7 @@ const INTRINSIC_DEC_REF_COUNT: &str = "<intrinsic>/dec_ref_count";
 
 struct LabelBlockInfo<'ctx> {
     block: BasicBlock<'ctx>,
+    args: Vec<PhiValue<'ctx>>,
     locals: HashMap<u32, PhiValue<'ctx>>,
     stack: Vec<PhiValue<'ctx>>,
     cache: Option<PhiValue<'ctx>>,
@@ -141,6 +142,7 @@ struct BlockBuilder<'ctx, 'a> {
 }
 
 struct CodeGenValuesRef<'ctx, 'a> {
+    args: &'a Vec<StructValue<'ctx>>,
     stack: &'a Vec<StructValue<'ctx>>,
     locals: &'a HashMap<u32, StructValue<'ctx>>,
     cache: &'a Option<StructValue<'ctx>>,
@@ -150,6 +152,7 @@ struct CodeGenValuesRef<'ctx, 'a> {
 macro_rules! create_code_gen_values_ref {
     ($code_gen:ident) => {
         CodeGenValuesRef {
+            args: &$code_gen.args,
             stack: &$code_gen.stack_loc,
             locals: &$code_gen.locals,
             cache: &$code_gen.cache,
@@ -202,6 +205,7 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
                 new_block_created = true;
                 LabelBlockInfo {
                     block: context.append_basic_block(func, lbl),
+                    args: vec![],
                     locals: Default::default(),
                     stack: vec![],
                     cache: None,
@@ -211,6 +215,8 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
 
 
         self.builder.position_at_end(entry.block);
+
+        self.merge_vec(&mut entry.args, values.args, "arg_phi", current_block, new_block_created);
 
         for (idx, value) in values.locals {
             entry.locals.entry(*idx)
@@ -428,7 +434,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             block_ended: false,
             parameter_count,
             local_count,
-            args: Option::None
+            args: Vec::new()
         }
     }
 
@@ -685,31 +691,27 @@ impl<'ctx> CodeGen<'ctx, '_> {
             ValueLocation::Local(idx) => {
                 self.locals.get(idx).unwrap().clone()
             }
+            ValueLocation::Argument(idx) => {
+                self.args[*idx as usize]
+            }
         }
     }
 
-    fn emit_load_argument(&self, idx: u32) -> StructValue<'ctx> {
-        let arg_ptr = self.emit_load_argument_pointer(idx);
-        let arg_value = self.builder.build_load(arg_ptr, "load_arg").into_struct_value();
-        return arg_value
-    }
+    fn emit_epilogue(&self, func: FunctionValue<'ctx>) {
+        let caller_arg_count = func.get_nth_param(4).unwrap().into_int_value();
+        let expected_arg_count = self.context.i32_type().const_int(self.parameter_count as u64, false);
+        let arg_ptr = func.get_nth_param(3).unwrap().into_pointer_value();
 
-    fn emit_load_argument_pointer(&self, idx: u32) -> PointerValue<'ctx> {
-        let args_pointer = self.args.unwrap();
-        let ptr_int = self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(Generic));
-        let args_pointer_int = self.builder.build_ptr_to_int(args_pointer, ptr_int, "args_ptr_to_int");
-        let size_of = self.val_type.size_of().unwrap();
-        let offset_int = size_of.const_mul(size_of.get_type().const_int(idx.clone() as u64, false));
-        let result_ptr_int = self.builder.build_int_add(args_pointer_int, self.builder.build_int_cast(offset_int, ptr_int, "conv"), "add_offset");
-        self.builder.build_int_to_ptr(result_ptr_int, self.val_type.ptr_type(Generic), "final_ptr")
-    }
-
-    fn emit_epilogue(&self) {
-        let parameter_count = self.parameter_count;
-        for param in 0..parameter_count {
-            let arg = self.emit_load_argument(param);
-            self.emit_dec_ref_count(arg);
-        }
+        let unref_excess_arguments_func = self.module.get_function("dmir.intrinsic.unref_excess_arguments").unwrap();
+        self.builder.build_call(
+            unref_excess_arguments_func,
+            &[
+                arg_ptr.into(),
+                expected_arg_count.into(),
+                caller_arg_count.into()
+            ],
+            "call_unref_excess_args"
+        );
     }
 
     fn emit_tag_predicate_comparison(&self, actual_tag: IntValue<'ctx>, predicate: &ValueTagPredicate) -> IntValue<'ctx> {
@@ -733,78 +735,63 @@ impl<'ctx> CodeGen<'ctx, '_> {
     }
 
     pub fn emit_prologue(&mut self, func: FunctionValue<'ctx>, max_sub_call_arg_count: u32) {
-        let val_ptr_type = self.val_type.ptr_type(AddressSpace::Generic);
 
         self.builder.build_store(func.get_nth_param(0).unwrap().into_pointer_value(), self.val_type.const_zero()); // initialize out
 
         let caller_arg_count = func.get_nth_param(4).unwrap().into_int_value();
         let args_ptr = func.get_nth_param(3).unwrap().into_pointer_value();
-        let ptr_int = self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(Generic));
-        let args_ptr_int = self.builder.build_ptr_to_int(args_ptr, ptr_int, "arg_ptr_int");
 
-        let copy_args_block = self.context.append_basic_block(func, "copy_args");
-        let copy_arg_check_block = self.context.append_basic_block(func, "copy_arg_check");
-        let copy_arg_block = self.context.append_basic_block(func, "copy_arg");
-        let end_block = self.context.append_basic_block(func, "end_prologue");
+        for arg_num in 0..self.parameter_count {
 
-        let param_count_const = self.context.i32_type().const_int(self.parameter_count as u64, false);
+            let before_block = self.builder.get_insert_block().unwrap();
+            let load_arg_block = self.context.append_basic_block(func, format!("arg_load_{}", arg_num).as_ref());
+            let post_load_arg_block = self.context.append_basic_block(func, format!("post_arg_load_{}", arg_num).as_ref());
 
-        let entry_block = self.builder.get_insert_block().unwrap();
-
-        // if args.count < parameter_count
-        self.builder.build_conditional_branch(
-            self.builder.build_int_compare(IntPredicate::ULT, caller_arg_count, param_count_const, "check_arg_count"),
-            copy_args_block,
-            end_block
-        );
-
-        self.builder.position_at_end(copy_args_block);
-        let copied_args = self.builder.build_alloca(self.val_type.array_type(self.parameter_count), "arg_array_copy");
-        self.builder.build_store(copied_args, self.val_type.array_type(self.parameter_count).const_zero());
-        let copied_args_cast = self.builder.build_pointer_cast(copied_args, val_ptr_type, "copied_args_ptr_cast");
-        self.builder.build_unconditional_branch(copy_arg_check_block);
+            // if arg_num < caller_arg_count
+            self.builder.build_conditional_branch(
+                self.builder.build_int_compare(
+                    IntPredicate::ULT,
+                    self.context.i32_type().const_int(arg_num as u64, false),
+                    caller_arg_count,
+                    "arg_num < caller_arg_count"
+                ),
+                load_arg_block,
+                post_load_arg_block
+            );
 
 
-        // while (i < arg_count)
-        //      copied_args[i] = *(args + i)
-        //      i++
-        self.builder.position_at_end(copy_arg_check_block);
-        let phi_i = self.builder.build_phi(self.context.i32_type(), "i");
-        phi_i.add_incoming(&[(&self.context.i32_type().const_zero(), copy_args_block)]);
+            // then
+            self.builder.position_at_end(load_arg_block);
+            let arg_ptr = unsafe {
+                self.builder.build_gep(
+                    args_ptr,
+                    &[
+                        self.context.i64_type().const_int(arg_num as u64, false)
+                    ],
+                    "arg_ptr"
+                )
+            };
+            let loaded_val = self.builder.build_load(arg_ptr, "load_arg").into_struct_value();
+            self.builder.build_unconditional_branch(post_load_arg_block);
 
-        let i = phi_i.as_basic_value().into_int_value();
-        self.builder.build_conditional_branch(
-            self.builder.build_int_compare(IntPredicate::ULT, i, caller_arg_count, "check_i_lt_arg_count"),
-            copy_arg_block,
-            end_block
-        );
-        self.builder.position_at_end(copy_arg_block);
 
-        let arg_src_ptr = self.builder.build_int_to_ptr(
-            self.builder.build_int_add(args_ptr_int, i, "args_plus_i"),
-            self.val_type.ptr_type(Generic),
-            "arg_ptr"
-        );
-        let arg_value = self.builder.build_load(arg_src_ptr, "load_arg");
-        let arg_dst_ptr = self.builder.build_int_to_ptr(
-            self.builder.build_int_add(
-                self.builder.build_ptr_to_int(copied_args, ptr_int, "to_ptr"),
-                i,
-                "copy_args_plus_i"
-            ),
-            self.val_type.ptr_type(Generic),
-            "copy_arg_ptr"
-        );
-        self.builder.build_store(arg_dst_ptr, arg_value);
-        let next_i = self.builder.build_int_add(i, self.context.i32_type().const_int(1, false), "i_plus_1");
-        phi_i.add_incoming(&[(&next_i, copy_arg_block)]);
-        self.builder.build_unconditional_branch(copy_arg_check_block);
+            // else
+            let null_val = self.val_type.const_zero();
 
-        self.builder.position_at_end(end_block);
-        let args_ptr_phi = self.builder.build_phi(val_ptr_type, "args_ptr");
-        args_ptr_phi.add_incoming(&[(&args_ptr, entry_block), (&copied_args_cast, copy_arg_check_block)]);
+            // post
+            self.builder.position_at_end(post_load_arg_block);
+            let arg_phi = self.builder.build_phi(self.val_type, "arg_phi");
+            arg_phi.add_incoming(
+                &[
+                    (&loaded_val, load_arg_block),
+                    (&null_val, before_block)
+                ]
+            );
+            let arg_value = arg_phi.as_basic_value().into_struct_value();
 
-        self.args = Option::Some(args_ptr_phi.as_basic_value().into_pointer_value());
+            self.args.push(arg_value);
+        }
+
 
         self.sub_call_arg_array_ptr = Option::Some(self.builder.build_alloca(self.val_type.array_type(max_sub_call_arg_count as u32), "proc_args_ptr"));
         self.sub_ret_ptr = Option::Some(self.builder.build_alloca(self.val_type, "proc_ret_ptr"));
@@ -1248,7 +1235,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let out = func.get_nth_param(0).unwrap().into_pointer_value();
                 self.builder.build_store(out, value);
                 self.block_ended = true;
-                self.emit_epilogue();
+                self.emit_epilogue(func);
                 self.builder.build_return(None);
             }
             // Set indexed local to stack top
@@ -1262,13 +1249,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(value);
             }
             DMIR::GetArg(idx) => {
-                let arg = self.emit_load_argument(idx.clone());
+                let arg = self.args[*idx as usize];
                 self.stack().push(arg);
             }
             DMIR::SetArg(idx) => {
                 let new_value = self.stack().pop();
-                let arg_ptr = self.emit_load_argument_pointer(idx.clone());
-                self.builder.build_store(arg_ptr, new_value);
+                self.args[*idx as usize] = new_value;
             }
             DMIR::IsNull => {
                 let value = self.stack().pop();
@@ -1412,10 +1398,14 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.test_res = None;
                 self.stack_loc.clear();
                 self.locals.clear();
+                self.args.clear();
                 self.cache = None;
 
                 self.builder.position_at_end(target.block);
 
+                self.args.extend(
+                    target.args.iter().map(|phi| phi.as_basic_value().into_struct_value())
+                );
                 self.locals.extend(
                     target.locals.iter().map(|(idx, phi)| (*idx, phi.as_basic_value().into_struct_value()))
                 );
@@ -1431,7 +1421,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::End => {
                 if !self.block_ended {
-                    self.emit_epilogue();
+                    self.emit_epilogue(func);
                     let out = func.get_nth_param(0).unwrap().into_pointer_value();
                     self.builder.build_store(out, self.val_type.const_zero());
                     self.builder.build_return(None);
@@ -1460,6 +1450,14 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 let parameter_count = Proc::from_id(proc_id.clone()).unwrap().parameter_names();
 
+                let args_ptr = self.builder.build_array_alloca(self.val_type, self.context.i32_type().const_int(self.args.len() as u64, false), "args_copy");
+                for (idx, arg) in self.args.iter().enumerate() {
+                    let arg_ptr = unsafe { self.builder.build_in_bounds_gep(args_ptr, &[self.context.i64_type().const_int(idx as u64, false)], "arg_store_gep") };
+                    self.builder.build_store(arg_ptr, *arg);
+                }
+                let args = self.builder.build_pointer_cast(args_ptr, self.val_type.ptr_type(Generic), "args_to_raw_ptr");
+
+
                 self.builder.build_call(
                     self.module.get_function(INTRINSIC_DEOPT).unwrap(),
                     &[
@@ -1472,7 +1470,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         self.context.i32_type().const_int(self.stack_loc.len() as u64, false).into(), //stack_size: u32,
                         self.cache.unwrap_or(self.val_type.const_zero()).into(), //cached_datum: auxtools::raw_types::values::Value,
                         func.get_nth_param(1).unwrap().into(), //src: auxtools::raw_types::values::Value,
-                        self.args.unwrap().into(), //args: *const auxtools::raw_types::values::Value,
+                        args.into(), //args: *const auxtools::raw_types::values::Value,
                         self.context.i32_type().const_int(parameter_count.len() as u64, false).into(), //args_count: u32,
                         self.builder.build_pointer_cast(locals_out_ptr, self.val_type.ptr_type(Generic), "cast").into(), //locals: *const auxtools::raw_types::values::Value,
                         self.context.i32_type().const_int(local_count as u64, false).into(), //locals_count: u32
