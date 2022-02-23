@@ -1,0 +1,23 @@
+name: Build DMJit for Linux [PullRequest]
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+  
+jobs:
+  check_labels:
+    name: Check labels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker://agilepathway/pull-request-label-checker:latest
+        with:
+          all_of: verified
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+  call_build_and_test_action:
+    name: Call build and test action
+    needs: [check_labels]
+    if: needs.check_labels.result == 'success'
+    uses: ./.github/workflows/linux_build_dmjit.yaml
+    with:
+      byondVersion: '514'
+      byondBuild: '1569'

@@ -1,0 +1,19 @@
+name: Build DMJit for Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+  push:
+    branches: ['main']
+    
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  
+jobs:
+  build-dmjit:
+    name: Stub Job
+    runs-on: windows-latest
+    steps:
+      - name: Not Implemented Yet
+        run: echo Not Implemented Yet

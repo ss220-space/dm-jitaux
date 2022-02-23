@@ -1,0 +1,21 @@
+name: Build DMJit for Linux [Manual]
+
+on:
+  workflow_dispatch:
+    inputs:
+      byondVersion:
+        description: 'Byond major version, like 514 in 514.1543 version'     
+        required: true
+        default: '514'
+      byondBuild:
+        description: 'Byond build version, like 1543 in 514.1543 version'     
+        required: true
+        default: '1569'
+  
+jobs:
+  call_build_and_test_action:
+    name: Call build and test action
+    uses: ./.github/workflows/linux_build_dmjit.yaml
+    with:
+      byondVersion: ${{ github.event.inputs.byondVersion }}
+      byondBuild: ${{ github.event.inputs.byondBuild }}
