@@ -1,0 +1,54 @@
+name: (Linux) Create and push Rust image
+
+on:
+  workflow_run:
+    workflows: ["(Linux) Create and push LLVM image"]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-llvm-rust-linux
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v2
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      - id: repoNameToLowerString
+        name: Repository name to lower string
+        uses: ASzc/change-string-case-action@v2
+        with:
+          string: ${{ github.REPOSITORY_OWNER }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./dockerbuild/ubuntu/rust/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REPOSITORY_NAME=ghcr.io/${{ steps.repoNameToLowerString.outputs.lowercase }}
+        env:
+          CARGO_HOME: /github/home/.cargo/bin
+          RUSTUP_HOME: /github/home/.cargo/bin

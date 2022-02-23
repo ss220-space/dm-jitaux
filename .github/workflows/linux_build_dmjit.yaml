@@ -1,0 +1,76 @@
+name: Build DMJit for Linux [Base]
+on:
+  workflow_call:
+    inputs:
+      byondVersion:
+        description: 'Byond major version, like 514 in 514.1543 version'
+        required: true
+        default: '514'
+        type: string
+      byondBuild:
+        description: 'Byond build version, like 1543 in 514.1543 version'
+        required: true
+        default: '1569'
+        type: string
+
+jobs:
+  repository_owner:
+    runs-on: ubuntu-latest
+    outputs:
+      lower_case: ${{ steps.repoNameToLowerString.outputs.lowercase }}
+    steps:
+      - id: repoNameToLowerString
+        name: Repository name to lower string
+        uses: ASzc/change-string-case-action@v2
+        with:
+          string: ${{ github.REPOSITORY_OWNER }}
+  build_and_test_dmjit:
+    needs: repository_owner
+    name: Build and test dmJIT
+    runs-on: ubuntu-latest
+    container: 
+      image: ghcr.io/${{ needs.repository_owner.outputs.lower_case }}/dmjit-llvm-rust-linux:main
+      options: --user root
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout auxtools repository
+        uses: actions/checkout@v3
+        with:
+          repository: ss220-space/auxtools
+          ref: dm-jitaux
+          path: auxtools
+      - name: Checkout current repository
+        uses: actions/checkout@v3
+        with:
+          path: dmjit
+      - name: Install zip
+        run: apt-get install zip unzip
+      - name: Download byond
+        uses: suisei-cn/actions-download-file@v1
+        id: downloadfile 
+        with:
+          url: "http://www.byond.com/download/build/${{ inputs.byondVersion }}/${{ inputs.byondVersion }}.${{ inputs.byondBuild }}_byond_linux.zip"
+          target: ./
+      - name: Create byond folder
+        run: mkdir byond
+      - name: Extract byond archive
+        run: unzip ${{ inputs.byondVersion }}.${{ inputs.byondBuild }}_byond_linux.zip
+      - name: Set override
+        run: rustup override set nightly-2021-11-05-i686-unknown-linux-gnu
+        working-directory: ./dmjit
+      - name: Run build
+        run: cargo build
+        working-directory: ./dmjit
+      - name: Run tests
+        run: cargo test
+        working-directory: ./dmjit
+        env:
+          BYOND_PATH: /__w/dmjit/dmjit/byond
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: dmjit-test-output
+          path: dmjit/tests/tmp

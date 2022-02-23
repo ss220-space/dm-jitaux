@@ -1,0 +1,17 @@
+name: Build DMJit for Linux [Auto]
+
+on:
+  push:
+    branches: ['main']
+  workflow_run:
+    workflows: ["(Linux) Create and push Byond image"]
+    types:
+      - completed
+  
+jobs:
+  call_build_and_test_action:
+    name: Call build and test action
+    uses: ./.github/workflows/linux_build_dmjit.yaml
+    with:
+      byondVersion: '514'
+      byondBuild: '1569'
