@@ -24,6 +24,7 @@ mod tools;
 mod test_utils;
 pub(crate) mod stack_map;
 mod section_memory_manager_bindings;
+pub(crate) mod proc_meta;
 
 
 #[macro_use]
