@@ -5,7 +5,7 @@ use dmasm::Instruction;
 use dmasm::format_disassembly;
 use dmasm::operands::Variable;
 use crate::{call_counts, DisassembleEnv};
-use crate::pads::deopt::DEOPT_COUNT;
+use crate::compile::PROC_META;
 
 pub fn var_desc(v: &Variable) -> String {
     match v {
@@ -123,11 +123,15 @@ pub fn dump_opcodes(list: Value) -> DMResult {
 
 #[hook("/proc/dmjit_dump_deopts")]
 fn dump_deopts() -> DMResult {
-    DEOPT_COUNT.with(|deopt_data| {
-        log::info!("Dump deopt statistics");
-        for ((proc_id, offset), count) in deopt_data.borrow().iter() {
-            log::info!("{:?} {}@{:X} -- {}", proc_id, Proc::from_id(*proc_id).map_or("_unk".to_string(), |proc| proc.path), offset, count)
+    for meta in unsafe { &PROC_META } {
+        let proc_id = meta.proc_id;
+        for point in meta.deopt_point_map.as_ref() {
+            match point {
+                Option::Some(point) if point.hits > 0 =>
+                    log::info!("{:?} {}@{:X} -- {}", proc_id, Proc::from_id(proc_id).map_or("_unk".to_string(), |proc| proc.path), point.origin.bytecode_offset, point.hits),
+                _ => {}
+            }
         }
-    });
+    }
     DMResult::Ok(Value::null())
 }

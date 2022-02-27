@@ -61,7 +61,7 @@ pub enum DMIR {
     EnterBlock(String),
     Jmp(String),
     InfLoopCheckDeopt(Box<DMIR>),
-    Deopt(u32, ProcId),
+    Deopt(u32, Vec<ValueLocation>),
     CheckTypeDeopt(u32, ValueTagPredicate, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
     CallProcByName(StringId, u8, u32),
@@ -207,11 +207,11 @@ fn decode_call(vr: &Variable, arg_count: u32, out: &mut Vec<DMIR>) {
 fn decode_cmp(op: FloatPredicate, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
     out.push(check_type_deopt!(
         @0 !is value_tag_pred!(@union ValueTag::Number, ValueTag::Null)
-        => DMIR::Deopt(data.offset, proc.id)
+        => DMIR::Deopt(data.offset, vec![])
     ));
     out.push(check_type_deopt!(
         @1 !is value_tag_pred!(@union ValueTag::Number, ValueTag::Null)
-        => DMIR::Deopt(data.offset, proc.id)
+        => DMIR::Deopt(data.offset, vec![])
     ));
     out.push(DMIR::FloatCmp(op));
 }
@@ -221,8 +221,8 @@ fn gen_push_null(out: &mut Vec<DMIR>) {
 }
 
 fn build_float_bin_op_deopt(action: DMIR, data: &DebugData, proc: &Proc, out: &mut Vec<DMIR>) {
-    out.push(CheckTypeDeopt(0, ValueTagPredicate::Tag(ValueTag::Number), Box::new(DMIR::Deopt(data.offset, proc.id))));
-    out.push(CheckTypeDeopt(1, ValueTagPredicate::Tag(ValueTag::Number), Box::new(DMIR::Deopt(data.offset, proc.id))));
+    out.push(CheckTypeDeopt(0, ValueTagPredicate::Tag(ValueTag::Number), Box::new(DMIR::Deopt(data.offset, vec![]))));
+    out.push(CheckTypeDeopt(1, ValueTagPredicate::Tag(ValueTag::Number), Box::new(DMIR::Deopt(data.offset, vec![]))));
     out.push(action);
 }
 
@@ -256,7 +256,7 @@ fn decode_switch(value: ValueLocation, switch_id: &mut u32, cases: Vec<(ValueTag
 
 fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, switch_counter: &mut u32, out: &mut Vec<DMIR>) {
     macro_rules! deopt {
-        () => ( vec![DMIR::Deopt(data.offset, proc.id), DMIR::End] );
+        () => ( vec![DMIR::Deopt(data.offset, vec![]), DMIR::End] );
     }
     match insn {
         Instruction::Add => {
@@ -330,8 +330,8 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
             // if node contains instruction
             dmasm::Node::Instruction(insn, data) => {
                 macro_rules! deopt {
-                    () => { Box::new(DMIR::Deopt(data.offset, proc.id)) };
-                    (@type_switch) => ( vec![DMIR::Deopt(data.offset, proc.id), DMIR::End] );
+                    () => { Box::new(DMIR::Deopt(data.offset, vec![])) };
+                    (@type_switch) => ( vec![DMIR::Deopt(data.offset, vec![]), DMIR::End] );
                 }
                 match insn {
                     // skip debug info for now
@@ -414,7 +414,7 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::CallGlob(arg_count, callee) => {
                         match callee.path.as_ref() {
                             "/dm_jitaux_deopt" => {
-                                irs.push(DMIR::Deopt(data.offset, proc.id));
+                                irs.push(DMIR::Deopt(data.offset, vec![]));
                                 gen_push_null(&mut irs);
                             }
                             "/dmjit_is_optimized" => {

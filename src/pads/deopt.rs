@@ -1,32 +1,37 @@
 extern crate libc;
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::ops::Shr;
 use std::panic::catch_unwind;
-use auxtools::raw_types::funcs::CURRENT_EXECUTION_CONTEXT;
+use std::ptr::slice_from_raw_parts;
+use num_enum::TryFromPrimitive;
+
+use auxtools::raw_types::funcs::{CURRENT_EXECUTION_CONTEXT, inc_ref_count};
 use auxtools::raw_types::values::{ValueData, ValueTag, Value};
 use auxtools::raw_types::strings::StringId;
 use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId};
 use auxtools::sigscan;
-use crate::compile::{STACK_MAP_INDEX, StackMapIndex};
-use crate::stack_map::{LocationType, StkMapRecord};
+use crate::compile::{PROC_META};
+use crate::dmir::ValueLocation;
+use crate::proc_meta::{ProcMetaId};
+use crate::stack_map::{Constant, Location, LocationType, StkMapRecord};
 
 static mut DO_CALL: Option<extern "cdecl" fn(*mut ProcInstance) -> Value> = Option::None;
 
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct DeoptId(pub u64);
 
 impl DeoptId {
-    pub fn new(proc_id: ProcId, site_id: u32) -> Self {
+    pub fn new(proc_mid: ProcMetaId, site_id: u32) -> Self {
         let value: u64 =
-            ((proc_id.0 as u64) << 32) | (site_id as u64);
+            ((proc_mid.0 as u64) << 32) | (site_id as u64);
         Self(value)
     }
-    fn proc_id(&self) -> ProcId {
-        ProcId((self.0 >> 32) as u32)
+    pub fn proc_mid(&self) -> ProcMetaId {
+        ProcMetaId((self.0 >> 32) as u32)
     }
-    fn site_id(&self) -> u32 {
+    pub fn index(&self) -> u32 {
         (self.0 & 0xFFFF_FFFF) as u32
     }
 }
@@ -50,10 +55,6 @@ fn do_call_trampoline(proc_instance: *mut ProcInstance) -> Value {
 #[cfg(windows)]
 fn do_call_trampoline(proc_instance: *mut ProcInstance) -> Value {
     *out = DO_CALL.unwrap()(proc);
-}
-
-thread_local! {
-    pub static DEOPT_COUNT: RefCell<HashMap<(ProcId, u32), u32>> = RefCell::new(HashMap::new());
 }
 
 #[naked]
@@ -99,110 +100,170 @@ struct Frame {
 }
 
 impl Frame {
-    fn reg_value(&self, number: u16) -> u32 {
-        match number {
-            0 => self.eax,
-            1 => self.ecx,
-            2 => self.edx,
-            3 => self.ebx,
-            4 => panic!("esp not stable"),
-            5 => self.ebp,
-            6 => self.esi,
-            7 => self.edi,
-            _ => panic!("unexpected reg_num: {}", number)
+    fn reg_value(&self, register: &Register) -> u32 {
+        match register {
+            Register::EAX => self.eax,
+            Register::ECX => self.ecx,
+            Register::EDX => self.edx,
+            Register::EBX => self.ebx,
+            Register::EBP => self.ebp,
+            Register::ESI => self.esi,
+            Register::EDI => self.edi,
         }
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct DeoptPointMeta {
+    pub hits: u64,
+    pub origin: DeoptPointOrigin,
+    stack_map_locations: Box<[StackMapAccessor]>
+}
+
+impl DeoptPointMeta {
+    pub fn parse_stack_map_record(origin: DeoptPointOrigin, record: &StkMapRecord, constants: &Vec<Constant>) -> DeoptPointMeta {
+        let stack_map_locations = record.locations.iter().map(|location| StackMapAccessor::new(location, constants)).collect::<Vec<_>>();
+
+        return Self {
+            hits: 0,
+            origin,
+            stack_map_locations: stack_map_locations.into_boxed_slice()
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DeoptPointOrigin {
+    pub bytecode_offset: u32,
+    pub inc_ref_count_locations: Box<[ValueLocation]>
+}
+
+#[derive(Debug, Clone)]
+enum StackMapAccessor {
+    Register { register: Register, bit_offset: u8 },
+    Direct { address: u32 },
+    Indirect { register: Register, address_offset: i32 },
+    Constant { value: u32 },
+    LargeConstant { value: u64 }
+}
+
+impl StackMapAccessor {
+    fn new(location: &Location, constants: &Vec<Constant>) -> Self {
+        match location.loc_type {
+            LocationType::Register =>
+                Self::Register { register: Register::try_from(location.dwarf_reg_num).unwrap(), bit_offset: u8::try_from(location.offset_or_const).unwrap() },
+            LocationType::Direct =>
+                Self::Direct { address: location.offset_or_const },
+            LocationType::Indirect =>
+                Self::Indirect { register: Register::try_from(location.dwarf_reg_num).unwrap(), address_offset: location.offset_or_const as i32 },
+            LocationType::Constant =>
+                Self::Constant { value: location.offset_or_const },
+            LocationType::ConstantIndex =>
+                Self::LargeConstant { value: constants[location.offset_or_const as usize].large_const }
+        }
+    }
+}
+
+#[repr(u16)]
+#[derive(Debug, TryFromPrimitive, Clone)]
+enum Register {
+    EAX = 0x0,
+    ECX = 0x1,
+    EDX = 0x2,
+    EBX = 0x3,
+    EBP = 0x5,
+    ESI = 0x6,
+    EDI = 0x7
+}
 
 #[derive(Debug)]
 struct ByondFrame {
-    offset: u32,
     out: *mut Value,
     src: Value,
     test_res: bool,
     arg_count: u32,
-    args: *mut Value,
+    caller_arg_count: u32,
+    original_args: *mut Value,
     cache: Value,
+    args: Vec<Value>,
     stack: Vec<Value>,
     locals: Vec<Value>
 }
 
 impl ByondFrame {
-    unsafe fn new(
+    unsafe fn read_from_frame(
         frame: &Frame,
-        stack_map_index: &StackMapIndex,
-        stack_map_record: &StkMapRecord,
+        deopt_meta: &DeoptPointMeta,
     ) -> Self {
         let mut idx = 0;
-        let offset = Self::read_local_as(frame, stack_map_record, &mut idx, stack_map_index);
-        let out = Self::read_local_as(frame, stack_map_record, &mut idx, stack_map_index);
-        let src = Self::read_value(frame, stack_map_record, &mut idx, stack_map_index);
-        let test_res = Self::read_local_as(frame, stack_map_record, &mut idx, stack_map_index);
-        let arg_count = Self::read_local_as(frame, stack_map_record, &mut idx, stack_map_index);
-        let args = Self::read_local_as(frame, stack_map_record, &mut idx, stack_map_index);
-        let cache = Self::read_value(frame, stack_map_record, &mut idx, stack_map_index);
-        let stack = Self::read_value_list(frame, stack_map_record, &mut idx, stack_map_index);
-        let locals = Self::read_value_list(frame, stack_map_record, &mut idx, stack_map_index);
+        let out = Self::read_frame_location_as(frame, deopt_meta, &mut idx);
+        let src = Self::read_value(frame, deopt_meta, &mut idx);
+        let test_res = Self::read_frame_location_as(frame, deopt_meta, &mut idx);
+        let cache = Self::read_value(frame, deopt_meta, &mut idx);
+        let arg_count = Self::read_frame_location_as(frame, deopt_meta, &mut idx);
+        let caller_arg_count = Self::read_frame_location_as(frame, deopt_meta, &mut idx);
+        let original_args = Self::read_frame_location_as(frame, deopt_meta, &mut idx);
+        let args = Self::read_value_list(frame, deopt_meta, &mut idx);
+        let stack = Self::read_value_list(frame, deopt_meta, &mut idx);
+        let locals = Self::read_value_list(frame, deopt_meta, &mut idx);
 
         Self {
-            offset,
             out,
             src,
             test_res,
             arg_count,
-            args,
+            caller_arg_count,
+            original_args,
             cache,
+            args,
             stack,
             locals
         }
     }
 
-    unsafe fn read_value_list(frame: &Frame, stack_map_record: &StkMapRecord, idx: &mut usize, stack_map_index: &StackMapIndex) -> Vec<Value> {
-        let count: u32 = Self::read_local_as(frame, stack_map_record, idx, stack_map_index);
+    unsafe fn read_value_list(frame: &Frame, deopt_meta: &DeoptPointMeta, idx: &mut usize) -> Vec<Value> {
+        let count: u32 = Self::read_frame_location_as(frame, deopt_meta, idx);
         let mut vec = Vec::with_capacity(count as usize);
         for _ in 0..count {
-            vec.push(Self::read_value(frame, stack_map_record, idx, stack_map_index));
+            vec.push(Self::read_value(frame, deopt_meta, idx));
         }
         vec
     }
 
-    unsafe fn read_value(frame: &Frame, stack_map_record: &StkMapRecord, idx: &mut usize, stack_map_index: &StackMapIndex) -> Value {
-        let tag = Self::read_local_as::<u8>(frame, stack_map_record, idx, stack_map_index);
-        let value = Self::read_local_as::<u32>(frame, stack_map_record, idx, stack_map_index);
+    unsafe fn read_value(frame: &Frame, deopt_meta: &DeoptPointMeta, idx: &mut usize) -> Value {
+        let tag = Self::read_frame_location_as::<u8>(frame, deopt_meta, idx);
+        let value = Self::read_frame_location_as::<u32>(frame, deopt_meta, idx);
         Value {
             tag: std::mem::transmute(tag),
             data: std::mem::transmute(value)
         }
     }
 
-    unsafe fn read_local_as<T: Copy + Sized + Debug>(frame: &Frame, stack_map_record: &StkMapRecord, idx: &mut usize, stack_map_index: &StackMapIndex) -> T {
-        let local = &stack_map_record.locations[*idx];
+    unsafe fn read_frame_location_as<T: Copy + Sized + Debug>(frame: &Frame, deopt_meta: &DeoptPointMeta, idx: &mut usize) -> T {
+        let accessor = &deopt_meta.stack_map_locations[*idx];
         *idx += 1;
 
-        let r = match local.loc_type {
-            LocationType::Register => {
-                let reg = frame.reg_value(local.dwarf_reg_num);
-                let value = reg.shr(local.offset_or_const as u8);
+        let r = match accessor {
+            StackMapAccessor::Register { register, bit_offset} => {
+                let reg = frame.reg_value(register);
+                let value = reg.shr(*bit_offset as u8);
                 *(((&value) as *const u32) as *const T)
             }
-            LocationType::Direct => {
-                *(local.offset_or_const as *const T)
+            StackMapAccessor::Direct { address } => {
+                *(*address as *const T)
             }
-            LocationType::Indirect => {
-                let ptr = (frame.reg_value(local.dwarf_reg_num) as *mut u8).offset(local.offset_or_const as isize);
+            StackMapAccessor::Indirect { register, address_offset } => {
+                let ptr = (frame.reg_value(register) as *mut u8).offset(*address_offset as isize);
                 *(ptr as *const T)
             }
-            LocationType::Constant => {
-                let value = local.offset_or_const;
-                *(((&value) as *const u32) as *const T)
+            StackMapAccessor::Constant { value } => {
+                *(((value) as *const u32) as *const T)
             }
-            LocationType::ConstantIndex => {
-                let value = stack_map_index.constants[local.offset_or_const as usize].large_const;
-                *(((&value) as *const u64) as *const T)
+            StackMapAccessor::LargeConstant { value } => {
+                *(((value) as *const u64) as *const T)
             }
         };
-        log::trace!("{:?} -> {:?}", local, r);
+        log::trace!("{:?} -> {:?}", accessor, r);
         return r;
     }
 }
@@ -213,29 +274,25 @@ extern "C" fn handle_deopt_bridge(
     log::trace!("Deopt called");
     let res = catch_unwind(move || {
         let deopt_id = DeoptId(frame.id);
-        log::trace!("Deopt entry: {:?}, site: {}", deopt_id.proc_id(), deopt_id.site_id());
+        log::trace!("Deopt entry: {:?}, site: {}", deopt_id.proc_mid(), deopt_id.index());
 
         log::trace!("Deopt frame: {:?}", frame);
-        let stack_map_index = unsafe { STACK_MAP_INDEX.as_ref().unwrap() };
-        let record = stack_map_index.records_by_id.get(&frame.id).unwrap();
-        log::trace!("Deopt record: {:?}", record);
-        let byond_frame = unsafe { ByondFrame::new(&frame, stack_map_index, record) };
-        log::trace!("Byond Frame: {:?}", byond_frame);
+        let proc_meta = unsafe { &mut PROC_META[deopt_id.proc_mid().0 as usize] };
 
+        log::trace!("ProcMeta: {:?}", proc_meta);
+
+        let deopt_meta = proc_meta.deopt_point_map[deopt_id.index() as usize].as_mut().unwrap();
+        log::trace!("DeoptPointMeta: {:?}", deopt_meta);
+
+        let byond_frame = unsafe { ByondFrame::read_from_frame(&frame, deopt_meta) };
+        log::trace!("ByondFrame: {:?}", byond_frame);
 
 
         handle_deopt_internal(
-            byond_frame.out,
-            deopt_id.proc_id(),
+            proc_meta.proc_id,
+            deopt_meta,
             2,
-            byond_frame.offset,
-            byond_frame.test_res,
-            byond_frame.stack,
-            byond_frame.cache,
-            byond_frame.src,
-            byond_frame.args,
-            byond_frame.arg_count,
-            byond_frame.locals
+            byond_frame,
         );
 
         log::trace!("id: {} ret: {:x} eax: {:x} edx: {:x} ecx: {:x} ebx: {:x} esi: {:x} edi: {:x} ebp: {:x} esp: {:x}",
@@ -256,24 +313,36 @@ extern "C" fn handle_deopt_bridge(
     }
 }
 
+fn inc_ref_counts(locations: &[ValueLocation], frame: &ByondFrame) {
+    for location in locations {
+        let value = match location {
+            ValueLocation::Stack(rel) => {
+                frame.stack[frame.stack.len() - 1 - (*rel as usize)]
+            }
+            ValueLocation::Cache => {
+                frame.cache
+            }
+            ValueLocation::Local(idx) => {
+                frame.locals[*idx as usize]
+            }
+            ValueLocation::Argument(idx) => {
+                frame.args[*idx as usize]
+            }
+        };
+        unsafe { inc_ref_count(value); }
+    }
+}
+
 fn handle_deopt_internal(
-    out: *mut Value,
     proc_id: ProcId,
+    deopt_point_meta: &mut DeoptPointMeta,
     proc_flags: u8,
-    offset: u32,
-    test_flag: bool,
-    stack: Vec<Value>,
-    cached_datum: Value,
-    src: Value,
-    args: *const Value,
-    args_count: u32,
-    locals: Vec<Value>,
+    mut frame: ByondFrame,
 ) {
-    let deopt_count = DEOPT_COUNT.with(|deopt_data| {
-        *deopt_data.borrow_mut().entry((proc_id, offset))
-            .and_modify(|prev| *prev += 1)
-            .or_insert(1)
-    });
+    let offset = deopt_point_meta.origin.bytecode_offset;
+
+    deopt_point_meta.hits += 1;
+    let deopt_count = deopt_point_meta.hits;
 
     let log_deopt =
         if cfg!(deopt_print_debug) {
@@ -284,6 +353,10 @@ fn handle_deopt_internal(
 
     if log_deopt { log::debug!("Deopt called entry {:?}", proc_id); }
     unsafe {
+
+        // prepare ref-counts
+        inc_ref_counts(deopt_point_meta.origin.inc_ref_count_locations.as_ref(), &frame);
+
         let context = {
             let size = std::mem::size_of::<ExecutionContext>() as libc::size_t;
             let r = libc::malloc(size);
@@ -305,18 +378,24 @@ fn handle_deopt_internal(
 
         (*proc).usr = usr_value;
         // src will be dec on DoCall exit, make sure not to lost it
-        auxtools::raw_types::funcs::inc_ref_count(src.clone());
+        auxtools::raw_types::funcs::inc_ref_count(frame.src);
 
-        (*proc).src = src;
+        (*proc).src = frame.src;
         (*proc).context = context;
         (*proc).arglist_idx = ValueData { id: 0 }; // TODO?
         (*proc).callback = std::ptr::null();
         (*proc).callback_value = 0;
 
-        (*proc).args_count = args_count;
+        let original_args = slice_from_raw_parts(frame.original_args, frame.caller_arg_count as usize);
+
+        for i in frame.arg_count..frame.caller_arg_count {
+            frame.args.push((&*original_args)[i as usize])
+        }
+
+        (*proc).args_count = frame.args.len() as u32;
         (*proc).data_store.internal_arg_count = 0;
 
-        (*proc).args = put_to_data_store(&mut (*proc).data_store, args, args_count);
+        (*proc).args = put_to_data_store(&mut (*proc).data_store, frame.args.as_ptr(), frame.args.len() as u32);
         (*proc).time_to_resume = 0.;
 
 
@@ -329,9 +408,9 @@ fn handle_deopt_internal(
         (*context).bytecode = bytecode_ptr;
         (*context).bytecode_offset = offset as u16;
 
-        (*context).test_flag = test_flag;
+        (*context).test_flag = frame.test_res;
 
-        (*context).cached_datum = cached_datum;
+        (*context).cached_datum = frame.cache;
         (*context).dmvalue_0x20 = Value {
             tag: ValueTag::Null,
             data: ValueData {
@@ -345,10 +424,10 @@ fn handle_deopt_internal(
         (*context).cached_values = (&mut cached_values) as *mut Value;
         (*context).dmvalue_ptr_2c = (&mut dmvalue_ptr_2c) as *mut Value;
 
-        (*context).locals = put_to_data_store(&mut (*proc).data_store, locals.as_ptr(), locals.len() as u32);
-        (*context).stack = put_to_data_store(&mut (*proc).data_store, stack.as_ptr(), stack.len() as u32);
-        (*context).locals_count = locals.len() as u16;
-        (*context).stack_size = stack.len() as u16;
+        (*context).locals = put_to_data_store(&mut (*proc).data_store, frame.locals.as_ptr(), frame.locals.len() as u32);
+        (*context).stack = put_to_data_store(&mut (*proc).data_store, frame.stack.as_ptr(), frame.stack.len() as u32);
+        (*context).locals_count = frame.locals.len() as u16;
+        (*context).stack_size = frame.stack.len() as u16;
 
         (*context).iterator_stack = std::ptr::null_mut(); // TODO
 
@@ -391,9 +470,9 @@ fn handle_deopt_internal(
 
         if log_deopt { log::debug!("Deopt called: context {:?}, proc {:?}", *context, *proc); }
 
-        *out = do_call_trampoline(proc);
+        *frame.out = do_call_trampoline(proc);
 
-        if log_deopt { log::debug!("Deopt return: {:?}", *out); }
+        if log_deopt { log::debug!("Deopt return: {:?}", *frame.out); }
     };
 }
 

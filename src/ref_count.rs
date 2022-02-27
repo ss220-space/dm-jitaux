@@ -803,17 +803,21 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>, parameter_count: usize)
         }
         match drain {
             DeoptDrain(pos, _, op) => {
+                let location = match op {
+                    IncRefOp::Pre(location) => location.clone(),
+                    _ => panic!("Post inc ref not supported for deopt-s")
+                };
+
                 let instruction = ir.get_mut(pos.clone()).unwrap();
                 match instruction {
                     DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) | DMIR::InfLoopCheckDeopt(deopt)  => {
-                        let mut tmp = DMIR::End;
-                        std::mem::swap(deopt.borrow_mut(), &mut tmp);
-                        *deopt.borrow_mut() = create_inc_ref_count_ir(tmp, op);
+                        match deopt.borrow_mut() {
+                            DMIR::Deopt(_, inc_ref_count_locations) => inc_ref_count_locations.push(location),
+                            _ => panic!("not matching instruction type")
+                        }
                     }
-                    DMIR::IncRefCount { .. } | DMIR::Deopt(_, _) => {
-                        let mut tmp = DMIR::End;
-                        std::mem::swap(instruction, &mut tmp);
-                        *instruction = create_inc_ref_count_ir(tmp, op);
+                    DMIR::Deopt(_, inc_ref_count_locations) => {
+                        inc_ref_count_locations.push(location)
                     }
                     _ => panic!("not matching instruction type")
                 }

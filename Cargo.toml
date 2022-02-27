@@ -22,6 +22,8 @@ libc = "0.2.97"
 typed-arena = "2.0.1"
 criterion = { version = "0.3.5", optional = true}
 binrw = "0.8.0"
+num_enum = "0.5.6"
+itertools = "0.10.3"
 
 [dev-dependencies]
 test_common = { path = "test_common" }
