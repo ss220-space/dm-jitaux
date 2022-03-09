@@ -17,8 +17,9 @@ use inkwell::module::Module;
 use inkwell::OptimizationLevel;
 use inkwell::passes::PassManager;
 use inkwell::values::AnyValue;
+use llvm_sys::execution_engine::LLVMExecutionEngineGetErrMsg;
 
-use crate::{ByondProcFunc, chad_hook_by_id, DisassembleEnv, dmir, guard};
+use crate::{ByondProcFunc, chad_hook_by_id, DisassembleEnv, dmir, guard, pads};
 use crate::codegen::CodeGen;
 use crate::dmir::DMIR;
 use crate::proc_meta::{ProcMeta, ProcMetaModuleBuilder};
@@ -56,7 +57,6 @@ pub fn compile_and_call(proc_name: auxtools::Value) -> DMResult {
                 compile_proc(
                     context,
                     &module_context.module,
-                    &module_context.execution_engine,
                     &mut module_context.meta_module,
                     proc,
                 );
@@ -81,7 +81,6 @@ pub fn install_hooks() -> DMResult {
         }
         let module_context = module_context.as_mut().unwrap();
 
-        let execution_engine = &module_context.execution_engine;
         let module = &module_context.module;
 
         let mpm = PassManager::create(());
@@ -89,31 +88,51 @@ pub fn install_hooks() -> DMResult {
         mpm.add_always_inliner_pass();
         mpm.run_on(module);
 
+        if let Err(err) = module.verify() {
+            log::error!("err: {}", err.to_string());
+        }
+
+        unsafe {
+            MEM_MANAGER = alloc_zeroed(Layout::new::<SectionMemoryManager>()).cast();
+            *MEM_MANAGER = SectionMemoryManager::new();
+        }
+
+
+        let mm_ref = unsafe {
+            SectionMemoryManager::create_mcjit_memory_manager(MEM_MANAGER)
+        };
+
+        let execution_engine =
+            module.create_jit_execution_engine_with_options(|opts| {
+                opts.OptLevel = OptimizationLevel::Default as u32;
+                opts.MCJMM = mm_ref;
+            }).unwrap();
+
+        pads::bind_runtime_externals(module, &execution_engine);
+
         log::info!("Module {}", module.print_to_string().to_string());
 
         let mut curr_function = module.get_first_function();
-        while curr_function.is_some() {
-            if let Some(func_value) = curr_function {
-                let name = func_value.get_name().to_str().unwrap();
+        while let Some(func_value) = curr_function {
+            let name = func_value.get_name().to_str().unwrap();
 
-                if !name.starts_with("<intrinsic>/") && !name.starts_with("dmir.intrinsic") && func_value.get_intrinsic_id() == 0 {
-                    log::info!("installing {}", name);
-                    installed.push(name.to_string());
-                    let func: ByondProcFunc = unsafe {
-                        transmute_copy(&execution_engine.get_function_address(name).unwrap())
-                    };
+            if !name.starts_with("<intrinsic>/") && !name.starts_with("dmir.intrinsic") && !name.starts_with("dmir.runtime") && func_value.get_intrinsic_id() == 0 {
+                log::info!("installing {}", name);
+                installed.push(name.to_string());
+                let func: ByondProcFunc = unsafe {
+                    transmute_copy(&execution_engine.get_function_address(name).unwrap())
+                };
 
-                    log::info!("target is {} at {:?}", name, func as (*mut ()));
+                log::info!("target is {} at {:?}", name, func as (*mut ()));
 
-                    let proc_id_attrib = func_value.get_string_attribute(AttributeLoc::Function, "proc_id").unwrap();
-                    // TODO: cleanup
-                    let proc_id = auxtools::raw_types::procs::ProcId(proc_id_attrib.get_string_value().to_string_lossy().parse::<u32>().unwrap());
-                    let proc = Proc::from_id(proc_id).unwrap();
-                    chad_hook_by_id(proc.id, func);
-                }
+                let proc_id_attrib = func_value.get_string_attribute(AttributeLoc::Function, "proc_id").unwrap();
+                // TODO: cleanup
+                let proc_id = auxtools::raw_types::procs::ProcId(proc_id_attrib.get_string_value().to_string_lossy().parse::<u32>().unwrap());
+                let proc = Proc::from_id(proc_id).unwrap();
+                chad_hook_by_id(proc.id, func);
             }
 
-            curr_function = curr_function.unwrap().get_next_function();
+            curr_function = func_value.get_next_function();
         }
 
         unsafe {
@@ -145,7 +164,6 @@ pub(crate) static mut PROC_META: Vec<ProcMeta> = Vec::new();
 
 struct ModuleContext<'ctx> {
     module: Module<'ctx>,
-    execution_engine: ExecutionEngine<'ctx>,
     meta_module: ProcMetaModuleBuilder,
 }
 
@@ -163,27 +181,10 @@ impl <'a, 'b> ModuleContext<'b> {
 
         module.set_name("dmir");
 
-        unsafe {
-            MEM_MANAGER = alloc_zeroed(Layout::new::<SectionMemoryManager>()).cast();
-            *MEM_MANAGER = SectionMemoryManager::new();
-        }
-
-
-        let mm_ref = unsafe {
-            SectionMemoryManager::create_mcjit_memory_manager(MEM_MANAGER)
-        };
-
-        let execution_engine =
-            module.create_jit_execution_engine_with_options(|opts| {
-                opts.OptLevel = OptimizationLevel::Default as u32;
-                opts.MCJMM = mm_ref;
-            }).unwrap();
-
         log::info!("Initialize ModuleContext");
 
         ModuleContext {
             module,
-            execution_engine,
             meta_module: ProcMetaModuleBuilder::new(),
         }
     }
@@ -197,7 +198,6 @@ static mut LLVM_MODULE_CONTEXT: Option<ModuleContext<'static>> = Option::None;
 fn compile_proc<'ctx>(
     context: &'static Context,
     module: &'ctx Module<'static>,
-    execution_engine: &'ctx ExecutionEngine<'static>,
     meta_module: &mut ProcMetaModuleBuilder,
     proc: auxtools::Proc,
 ) {
@@ -252,12 +252,10 @@ fn compile_proc<'ctx>(
         context,
         &module,
         context.create_builder(),
-        execution_engine,
         meta_builder,
         proc.parameter_names().len() as u32,
         proc.local_names().len() as u32,
     );
-    code_gen.init_builtins();
 
     let func = code_gen.create_jit_func(proc.path.as_str());
 
