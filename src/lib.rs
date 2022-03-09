@@ -166,9 +166,7 @@ pub fn log_init() -> DMResult {
 
     auxtools::hooks::install_interceptor(intercept_proc_call);
 
-    pads::deopt::initialize_deopt();
-    pads::debug::init();
-    pads::lists::init();
+    pads::init();
 
     Value::from_string(format!("dmJIT init success, {}", ver_string!()))
 }
