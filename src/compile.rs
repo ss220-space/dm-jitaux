@@ -16,7 +16,7 @@ use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::module::Module;
 use inkwell::OptimizationLevel;
 use inkwell::passes::PassManager;
-use inkwell::values::AnyValue;
+use inkwell::values::{AnyValue, MetadataValue};
 use llvm_sys::execution_engine::LLVMExecutionEngineGetErrMsg;
 
 use crate::{ByondProcFunc, chad_hook_by_id, DisassembleEnv, dmir, guard, pads};
@@ -80,6 +80,7 @@ pub fn install_hooks() -> DMResult {
             return DMResult::Ok(Value::from(false))
         }
         let module_context = module_context.as_mut().unwrap();
+        let dmir_meta_kind_id = module_context.module.get_context().get_kind_id("dmir");
 
         let module = &module_context.module;
 
@@ -114,9 +115,9 @@ pub fn install_hooks() -> DMResult {
 
         let mut curr_function = module.get_first_function();
         while let Some(func_value) = curr_function {
-            let name = func_value.get_name().to_str().unwrap();
+            if let Some(dmir_meta) = func_value.get_metadata(dmir_meta_kind_id) {
+                let name = func_value.get_name().to_str().unwrap();
 
-            if !name.starts_with("<intrinsic>/") && !name.starts_with("dmir.intrinsic") && !name.starts_with("dmir.runtime") && func_value.get_intrinsic_id() == 0 {
                 log::info!("installing {}", name);
                 installed.push(name.to_string());
                 let func: ByondProcFunc = unsafe {
@@ -125,13 +126,12 @@ pub fn install_hooks() -> DMResult {
 
                 log::info!("target is {} at {:?}", name, func as (*mut ()));
 
-                let proc_id_attrib = func_value.get_string_attribute(AttributeLoc::Function, "proc_id").unwrap();
-                // TODO: cleanup
-                let proc_id = auxtools::raw_types::procs::ProcId(proc_id_attrib.get_string_value().to_string_lossy().parse::<u32>().unwrap());
+                let proc_id_meta = dmir_meta.get_node_values()[0];
+                let proc_id_value = proc_id_meta.into_int_value().get_zero_extended_constant().unwrap() as u32;
+                let proc_id = auxtools::raw_types::procs::ProcId(proc_id_value);
                 let proc = Proc::from_id(proc_id).unwrap();
                 chad_hook_by_id(proc.id, func);
             }
-
             curr_function = func_value.get_next_function();
         }
 
@@ -201,6 +201,7 @@ fn compile_proc<'ctx>(
     meta_module: &mut ProcMetaModuleBuilder,
     proc: auxtools::Proc,
 ) {
+    let dmir_meta_kind_id = context.get_kind_id("dmir");
     log::info!("Trying compile {}", proc.path);
 
     // Take bytecode of proc to compile
@@ -259,8 +260,8 @@ fn compile_proc<'ctx>(
 
     let func = code_gen.create_jit_func(proc.path.as_str());
 
-    let proc_id_attr = context.create_string_attribute("proc_id", format!("{}", proc.id.0).as_str());
-    func.add_attribute(AttributeLoc::Function, proc_id_attr);
+    let node = context.metadata_node(&[context.i32_type().const_int(proc.id.0 as u64, false).into()]);
+    func.set_metadata(dmir_meta_kind_id, node);
 
     code_gen.emit_prologue(func, max_sub_call_arg_count);
     // Emit LLVM IR nodes from DMIR
