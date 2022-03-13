@@ -89,6 +89,35 @@ pub fn install_hooks() -> DMResult {
         mpm.add_always_inliner_pass();
         mpm.run_on(module);
 
+        let fpm = PassManager::create(module);
+
+        fpm.add_early_cse_mem_ssa_pass();
+        fpm.add_loop_idiom_pass();
+        fpm.add_licm_pass();
+        fpm.add_instruction_combining_pass();
+        fpm.add_cfg_simplification_pass();
+        fpm.add_basic_alias_analysis_pass();
+        fpm.add_scalar_repl_aggregates_pass();
+        fpm.add_bit_tracking_dce_pass();
+        fpm.add_instruction_combining_pass();
+        fpm.add_reassociate_pass();
+        fpm.add_cfg_simplification_pass();
+        fpm.add_basic_alias_analysis_pass();
+        fpm.add_promote_memory_to_register_pass();
+        fpm.add_instruction_combining_pass();
+        fpm.add_reassociate_pass();
+
+        fpm.initialize();
+
+        let mut curr_function = module.get_first_function();
+        while let Some(func_value) = curr_function {
+            let dmir_meta = func_value.get_metadata(dmir_meta_kind_id);
+            if dmir_meta.is_some() {
+                fpm.run_on(&func_value);
+            }
+            curr_function = func_value.get_next_function();
+        }
+
         if let Err(err) = module.verify() {
             log::error!("err: {}", err.to_string());
         }
@@ -277,28 +306,5 @@ fn compile_proc<'ctx>(
         log::error!("err: {}", err.to_string());
     }
 
-    log::info!("Compiled {}, installing {}", verify, proc.path);
-
-    let fpm = PassManager::create(code_gen.module);
-
-    fpm.add_early_cse_mem_ssa_pass();
-    fpm.add_loop_idiom_pass();
-    fpm.add_licm_pass();
-    fpm.add_instruction_combining_pass();
-    fpm.add_cfg_simplification_pass();
-    fpm.add_basic_alias_analysis_pass();
-    fpm.add_scalar_repl_aggregates_pass();
-    fpm.add_bit_tracking_dce_pass();
-    fpm.add_instruction_combining_pass();
-    fpm.add_reassociate_pass();
-    fpm.add_cfg_simplification_pass();
-    fpm.add_basic_alias_analysis_pass();
-    fpm.add_promote_memory_to_register_pass();
-    fpm.add_instruction_combining_pass();
-    fpm.add_reassociate_pass();
-
-    fpm.initialize();
-
-    let res = fpm.run_on(&func);
-    log::info!("OPT -- {}\n{}", res, func.print_to_string().to_string());
+    log::info!("Verify {}: {}", proc.path, verify);
 }
