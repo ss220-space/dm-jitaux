@@ -10,10 +10,12 @@ use num_enum::TryFromPrimitive;
 use auxtools::raw_types::funcs::{CURRENT_EXECUTION_CONTEXT, inc_ref_count};
 use auxtools::raw_types::values::{ValueData, ValueTag, Value};
 use auxtools::raw_types::strings::StringId;
-use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId};
+use auxtools::raw_types::procs::{ExecutionContext, ProcInstance, ProcId, IteratorStackValue};
 use auxtools::sigscan;
+use libc::malloc;
 use crate::compile::{PROC_META};
 use crate::dmir::ValueLocation;
+use crate::pads::iterators::ByondIter;
 use crate::proc_meta::{ProcMetaId};
 use crate::stack_map::{Constant, Location, LocationType, StkMapRecord};
 
@@ -136,7 +138,9 @@ impl DeoptPointMeta {
 #[derive(Debug, Clone)]
 pub struct DeoptPointOrigin {
     pub bytecode_offset: u32,
-    pub inc_ref_count_locations: Box<[ValueLocation]>
+    pub inc_ref_count_locations: Box<[ValueLocation]>,
+    pub has_active_iterator: bool,
+    pub iterator_stack_size: u32
 }
 
 #[derive(Debug, Clone)]
@@ -189,7 +193,9 @@ struct ByondFrame {
     cache: Value,
     args: Vec<Value>,
     stack: Vec<Value>,
-    locals: Vec<Value>
+    locals: Vec<Value>,
+    active_iterator: Option<ByondIter>,
+    iterator_stack: Vec<ByondIter>
 }
 
 impl ByondFrame {
@@ -209,6 +215,14 @@ impl ByondFrame {
         let stack = Self::read_value_list(frame, deopt_meta, &mut idx);
         let locals = Self::read_value_list(frame, deopt_meta, &mut idx);
 
+        let active_iterator = deopt_meta.origin.has_active_iterator
+            .then(|| Self::read_iterator(frame, deopt_meta, &mut idx));
+        let iterator_stack = Self::read_iterator_list(
+            deopt_meta.origin.iterator_stack_size,
+            frame, deopt_meta, &mut idx
+        );
+
+
         Self {
             out,
             src,
@@ -219,8 +233,30 @@ impl ByondFrame {
             cache,
             args,
             stack,
-            locals
+            locals,
+            active_iterator,
+            iterator_stack
         }
+    }
+
+    unsafe fn read_iterator(frame: &Frame, deopt_meta: &DeoptPointMeta, idx: &mut usize) -> ByondIter {
+        ByondIter {
+            kind: Self::read_frame_location_as(frame, deopt_meta, idx),
+            array: Self::read_frame_location_as(frame, deopt_meta, idx),
+            allocated: Self::read_frame_location_as(frame, deopt_meta, idx),
+            length: Self::read_frame_location_as(frame, deopt_meta, idx),
+            index: Self::read_frame_location_as(frame, deopt_meta, idx),
+            filter_flags: Self::read_frame_location_as(frame, deopt_meta, idx),
+            filter_type: Self::read_value(frame, deopt_meta, idx)
+        }
+    }
+
+    unsafe fn read_iterator_list(count: u32, frame: &Frame, deopt_meta: &DeoptPointMeta, idx: &mut usize) -> Vec<ByondIter> {
+        let mut vec = Vec::with_capacity(count as usize);
+        for _ in 0..count {
+            vec.push(Self::read_iterator(frame, deopt_meta, idx));
+        }
+        vec
     }
 
     unsafe fn read_value_list(frame: &Frame, deopt_meta: &DeoptPointMeta, idx: &mut usize) -> Vec<Value> {
@@ -431,8 +467,36 @@ fn handle_deopt_internal(
         (*context).locals_count = frame.locals.len() as u16;
         (*context).stack_size = frame.stack.len() as u16;
 
-        (*context).iterator_stack = std::ptr::null_mut(); // TODO
 
+        if let Some(iter) = frame.active_iterator.as_ref() {
+            (*context).iterator_kind = iter.kind;
+            (*context).current_iterator = iter.array;
+            (*context).iterator_allocated = iter.allocated;
+            (*context).iterator_length = iter.length;
+            (*context).iterator_index = iter.index;
+            (*context).iterator_filter_bitflags = iter.filter_flags;
+            (*context).iterator_filter_type = iter.filter_type;
+        }
+
+        (*context).iterator_stack = std::ptr::null_mut();
+        for iter in frame.iterator_stack.iter() {
+            let size = std::mem::size_of::<IteratorStackValue>() as libc::size_t;
+            let memory = libc::malloc(size);
+            libc::memset(memory, 0, size);
+
+            let iterator_stack_value_ptr = memory as *mut IteratorStackValue;
+
+            (*iterator_stack_value_ptr).iterator_kind = iter.kind;
+            (*iterator_stack_value_ptr).iterator_array = iter.array;
+            (*iterator_stack_value_ptr).iterator_allocated = iter.allocated;
+            (*iterator_stack_value_ptr).iterator_length = iter.length;
+            (*iterator_stack_value_ptr).iterator_index = iter.index;
+            (*iterator_stack_value_ptr).iterator_filter_bitflags = iter.filter_flags;
+            (*iterator_stack_value_ptr).iterator_filter_type = iter.filter_type;
+            (*iterator_stack_value_ptr).next_iterator = (*context).iterator_stack;
+
+            (*context).iterator_stack = iterator_stack_value_ptr;
+        }
         /*
         TODO
         pub current_iterator: *mut values::Value,

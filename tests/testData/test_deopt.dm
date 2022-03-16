@@ -10,6 +10,3 @@
     if (n > 0)
         return q
     return 2
-
-// Intrinsic to emulate deopt
-/proc/dm_jitaux_deopt()

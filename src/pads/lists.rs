@@ -4,6 +4,7 @@ use auxtools::raw_types::funcs::{append_to_list, create_list, dec_ref_count, rem
 use auxtools::raw_types::lists::{AssociativeListEntry, List, ListId};
 use auxtools::raw_types::values::{Value, ValueData, ValueTag};
 use crate::pads::{byond_imports, find_by_call, find_by_reference};
+use libc::{c_void, free};
 
 byond_imports!(
     var GLOB_LIST_ARRAY: *mut *mut List

@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 
 use auxtools::raw_types::values::ValueTag;
+use dmasm::list_operands::TypeFilter;
 use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 use inkwell::attributes::{Attribute, AttributeLoc};
 use inkwell::basic_block::BasicBlock;
@@ -34,6 +35,9 @@ pub struct CodeGen<'ctx, 'a> {
     parameter_count: u32,
     local_count: u32,
     args: Vec<StructValue<'ctx>>,
+    iterator_stack: Vec<PointerValue<'ctx>>,
+    active_iterator: Option<PointerValue<'ctx>>,
+    allocated_iterator: Option<PointerValue<'ctx>>,
     proc_meta_builder: &'a mut ProcMetaBuilder
 }
 
@@ -44,6 +48,9 @@ struct LabelBlockInfo<'ctx> {
     args: Vec<PhiValue<'ctx>>,
     locals: HashMap<u32, PhiValue<'ctx>>,
     stack: Vec<PhiValue<'ctx>>,
+    iterator_stack: Vec<PointerValue<'ctx>>,
+    active_iterator: Option<PointerValue<'ctx>>,
+    allocated_iterator: Option<PointerValue<'ctx>>,
     cache: Option<PhiValue<'ctx>>,
     test_res: Option<PhiValue<'ctx>>,
     loop_iter_counter: Option<PhiValue<'ctx>>
@@ -136,6 +143,9 @@ struct BlockBuilder<'ctx, 'a> {
 struct CodeGenValuesRef<'ctx, 'a> {
     args: &'a Vec<StructValue<'ctx>>,
     stack: &'a Vec<StructValue<'ctx>>,
+    iterator_stack: &'a Vec<PointerValue<'ctx>>,
+    active_iterator: &'a Option<PointerValue<'ctx>>,
+    allocated_iterator: &'a Option<PointerValue<'ctx>>,
     locals: &'a HashMap<u32, StructValue<'ctx>>,
     cache: &'a Option<StructValue<'ctx>>,
     test_res: &'a IntValue<'ctx>,
@@ -147,6 +157,9 @@ macro_rules! create_code_gen_values_ref {
         CodeGenValuesRef {
             args: &$code_gen.args,
             stack: &$code_gen.stack_loc,
+            iterator_stack: &$code_gen.iterator_stack,
+            active_iterator: &$code_gen.active_iterator,
+            allocated_iterator: &$code_gen.allocated_iterator,
             locals: &$code_gen.locals,
             cache: &$code_gen.cache,
             test_res: &$code_gen.test_res,
@@ -159,8 +172,9 @@ macro_rules! create_code_gen_values_ref {
 impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
 
     fn merge_vec(&self, target: &mut Vec<PhiValue<'ctx>>, source: &Vec<StructValue<'ctx>>, phi_name: &str, source_block: BasicBlock<'ctx>, is_new_block: bool) {
+        let element_type = source.first().map(|element| element.get_type());
         if is_new_block {
-            target.resize_with(source.len(), || self.builder.build_phi(self.val_type.clone(), phi_name));
+            target.resize_with(source.len(), || self.builder.build_phi(element_type.unwrap(), phi_name));
         } else {
             assert_eq!(source.len(), target.len(), "values count mismatch when creating {}", phi_name);
         }
@@ -202,6 +216,9 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
                     args: vec![],
                     locals: Default::default(),
                     stack: vec![],
+                    iterator_stack: vec![],
+                    active_iterator: None,
+                    allocated_iterator: None,
                     cache: None,
                     test_res: None,
                     loop_iter_counter: None
@@ -223,6 +240,20 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
         }
 
         self.merge_vec(&mut entry.stack, values.stack, "stack_phi", current_block, new_block_created);
+
+        // Note: No PHI nodes for iterators allowed
+        if new_block_created {
+            entry.iterator_stack = values.iterator_stack.clone();
+            entry.active_iterator = values.active_iterator.clone();
+            entry.allocated_iterator = values.allocated_iterator.clone();
+        } else {
+            assert_eq!(entry.iterator_stack.len(), values.iterator_stack.len());
+            for (index, iter) in entry.iterator_stack.iter().enumerate() {
+                assert_eq!(values.iterator_stack[index].as_any_value_enum(), iter.as_any_value_enum())
+            }
+            assert_eq!(&entry.active_iterator, values.active_iterator);
+            assert_eq!(&entry.allocated_iterator, values.allocated_iterator);
+        }
 
         self.merge_option(&mut entry.cache, values.cache, "cache_phi", current_block, new_block_created);
         self.merge_option(&mut entry.test_res, &Some(values.test_res.clone()), "test_res_phi", current_block, new_block_created);
@@ -274,6 +305,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
             parameter_count,
             local_count,
             args: Vec::new(),
+            iterator_stack: Vec::new(),
+            active_iterator: Option::None,
+            allocated_iterator: Option::None,
             proc_meta_builder
         }
     }
@@ -543,7 +577,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
         }
     }
 
-    fn emit_epilogue(&self, func: FunctionValue<'ctx>) {
+    fn emit_epilogue(&mut self, func: FunctionValue<'ctx>) {
+        let iterators = self.iterator_stack.drain(..).collect::<Vec<_>>();
+        for iterator in iterators {
+            self.emit_iterator_destructor(iterator);
+        }
+
         let caller_arg_count = func.get_nth_param(4).unwrap().into_int_value();
         let expected_arg_count = self.context.i32_type().const_int(self.parameter_count as u64, false);
         let arg_ptr = func.get_nth_param(3).unwrap().into_pointer_value();
@@ -558,6 +597,44 @@ impl<'ctx> CodeGen<'ctx, '_> {
             ],
             "call_unref_excess_args"
         );
+    }
+
+    fn emit_iterator_destructor(&self, iterator_value: PointerValue<'ctx>) {
+        let destroy_func = self.module.get_function("dmir.intrinsic.iter.destroy").unwrap();
+        self.builder.build_call(
+            destroy_func,
+            &[
+                iterator_value.into()
+            ],
+            "iterator_destroy"
+        );
+    }
+
+    fn emit_iterator_constructor(&mut self, call: &str, type_filter: &TypeFilter) {
+
+        if let Some(prev) = self.active_iterator.take() {
+            self.emit_iterator_destructor(prev);
+        }
+
+        let load_func = self.module.get_function(call).unwrap();
+        let source = self.stack().pop();
+        let new_iterator = self.allocated_iterator.take().unwrap();
+
+        let mut type_filter = type_filter.clone();
+        if type_filter.contains(TypeFilter::ANYTHING) {
+            type_filter = TypeFilter::empty()
+        }
+
+        self.builder.build_call(
+            load_func,
+            &[
+                new_iterator.into(),
+                source.into(),
+                self.context.i32_type().const_int(type_filter.bits() as u64, false).into(),
+            ],
+            "load_iterator"
+        );
+        self.active_iterator = Some(new_iterator);
     }
 
     fn emit_tag_predicate_comparison(&self, actual_tag: IntValue<'ctx>, predicate: &ValueTagPredicate) -> IntValue<'ctx> {
@@ -1392,6 +1469,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.block_ended = false;
 
                 self.stack_loc.clear();
+                self.iterator_stack.clear();
                 self.locals.clear();
                 self.args.clear();
                 self.cache = None;
@@ -1407,6 +1485,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack_loc.extend(
                     target.stack.iter().map(|phi| phi.as_basic_value().into_struct_value())
                 );
+                self.iterator_stack.extend(
+                    target.iterator_stack.iter()
+                );
+                self.active_iterator = target.active_iterator;
+                self.allocated_iterator = target.allocated_iterator;
 
                 if let Some(cache_phi) = &target.cache {
                     self.cache = Some(cache_phi.as_basic_value().into_struct_value());
@@ -1425,7 +1508,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.block_ended = true;
             }
             DMIR::Deopt(offset, inc_ref_count_locations) => {
-                let deopt_id = self.proc_meta_builder.add_deopt_point(*offset, inc_ref_count_locations);
+                let deopt_id = self.proc_meta_builder.add_deopt_point(
+                    *offset,
+                    inc_ref_count_locations,
+                    self.active_iterator.map_or(false, |_| true),
+                    self.iterator_stack.len() as u32
+                );
 
                 let insert_stack_map = decl_intrinsic!(self "llvm.experimental.stackmap" (i64_type, i32_type, ...) -> void_type);
 
@@ -1495,6 +1583,25 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         local_value_meta.data.into()
                     );
                 }
+
+                // iterators
+                for iterator_ptr in self.active_iterator.iter().chain(self.iterator_stack.iter()) {
+                    let iterator_value = self.builder.build_load(*iterator_ptr, "load_iterator").into_struct_value();
+                    // iterator_type = 0, iterator_array = 1, iterator_allocated = 2, iterator_length = 3, iterator_index = 4, iterator_filter_flags = 5, iterator_filter_type = 6
+                    let filter_type_value = self.builder.build_extract_value(iterator_value, 6, "iterator_filter_type").unwrap();
+                    let filter_type_meta = self.emit_load_meta_value(filter_type_value.into_struct_value());
+                    args.append(&mut vec![
+                        self.builder.build_extract_value(iterator_value, 0, "iterator_type").unwrap().into(),
+                        self.builder.build_extract_value(iterator_value, 1, "iterator_array").unwrap().into(),
+                        self.builder.build_extract_value(iterator_value, 2, "iterator_allocated").unwrap().into(),
+                        self.builder.build_extract_value(iterator_value, 3, "iterator_length").unwrap().into(),
+                        self.builder.build_extract_value(iterator_value, 4, "iterator_index").unwrap().into(),
+                        self.builder.build_extract_value(iterator_value, 5, "iterator_filter_flags").unwrap().into(),
+                        filter_type_meta.tag.into(),
+                        filter_type_meta.data.into()
+                    ]);
+                }
+
 
                 self.builder.build_call(
                     insert_stack_map,
@@ -1647,6 +1754,53 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::UnsetLocal(idx) => {
                 self.locals.remove(idx);
+            }
+            DMIR::IterAllocate => {
+                let first_block = func.get_first_basic_block().unwrap();
+                let current_block = self.builder.get_insert_block().unwrap();
+
+                let iterator_struct_type = self.module.get_struct_type("DMIterator").unwrap();
+                self.builder.position_before(&first_block.get_last_instruction().unwrap());
+                let new_iterator = self.builder.build_alloca(iterator_struct_type, "iter");
+                self.builder.position_at_end(current_block);
+                assert!(self.allocated_iterator.is_none());
+                self.allocated_iterator = Some(new_iterator);
+            }
+            DMIR::ArrayIterLoadFromList(type_filter) => {
+                self.emit_iterator_constructor("dmir.intrinsic.iter.load_array_from_list", type_filter);
+            }
+            DMIR::ArrayIterLoadFromObject(type_filter) => {
+                self.emit_iterator_constructor("dmir.intrinsic.iter.load_array_from_object", type_filter);
+            }
+            DMIR::IterNext => {
+                let iterator = self.active_iterator.unwrap();
+                let func = self.module.get_function("dmir.intrinsic.iter.next").unwrap();
+                let result = self.builder.build_call(
+                    func,
+                    &[
+                        iterator.into()
+                    ],
+                    "next"
+                ).try_as_basic_value().left().unwrap().into_struct_value();
+
+                let value = self.builder.build_extract_value(result, 0, "load_value").unwrap().into_struct_value();
+                let test_res = self.builder.build_extract_value(result, 1, "load_test_res").unwrap().into_int_value();
+
+                self.stack().push(value);
+
+                // self.dbg("iter next");
+                // self.dbg_val(value);
+                self.test_res = test_res;
+            }
+            DMIR::IterPush => {
+                self.iterator_stack.push(self.active_iterator.take().unwrap());
+            }
+            DMIR::IterPop => {
+                if let Some(iterator) = self.active_iterator.take() {
+                    self.emit_iterator_destructor(iterator);
+                }
+                self.active_iterator = self.iterator_stack.pop();
+                assert!(self.active_iterator.is_some());
             }
             _ => {}
         }

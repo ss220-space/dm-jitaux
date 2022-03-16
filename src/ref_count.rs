@@ -18,6 +18,7 @@ enum RValue<'t> {
     ProduceSource(usize, IncRefOp), // on-demand ref count increment, example: getting value from variable, which already have non-zero ref count, and by this can be eliminated
     UncountedSource(usize), // produces value, that doesn't need to be counted, example: results of numeric operations
     MovedInSource(usize), // moves-in value with already incremented ref count, example: return result of other proc call
+    PullInSource(usize, IncRefOp), // moves-in value and incrementing ref count forcefully, example: pulling in value from iterator
     Phi(u32, RefCell<Vec<&'t RValue<'t>>>) // combines values in results of branching
 }
 
@@ -89,6 +90,7 @@ fn rvalue_dfs<'t>(value: &'t RValue<'t>, visited: &mut HashSet<&'t RValue<'t>>) 
         RValue::ProduceSource(_, _) => {}
         RValue::MovedInSource(_) => {}
         RValue::UncountedSource(_) => {}
+        RValue::PullInSource(_, _) => {}
         Phi(_, incoming) => {
             for value in incoming.borrow().iter() {
                 rvalue_dfs(*value, visited);
@@ -240,6 +242,9 @@ impl<'t> Analyzer<'t> {
             });
             (@move_in @$kind:ident $($idx:expr)?) => ({
                 make_write!(RValue::MovedInSource(pos), @$kind $($idx)?);
+            });
+            (@pull_in @$kind:ident $($idx:expr)?) => ({
+                make_write!(RValue::PullInSource(pos, IncRefOp::Post(make_write_location!(@$kind $($idx)?))), @$kind $($idx)?);
             });
             (@produce_uncounted @$kind:ident $($idx:expr)?) => ({
                 make_write!(RValue::UncountedSource(pos), @$kind $($idx)?);
@@ -569,6 +574,23 @@ impl<'t> Analyzer<'t> {
                 }
                 self.cache = Option::None;
             }
+            DMIR::ArrayIterLoadFromList(_) => {
+                op_effect!(
+                    @consume @stack
+                )
+            }
+            DMIR::ArrayIterLoadFromObject(_) => {
+                op_effect!(
+                    @consume @stack
+                )
+            }
+            DMIR::IterNext => {
+                op_effect!(
+                    @pull_in @stack
+                )
+            }
+            DMIR::IterPop | DMIR::IterPush => {}
+            DMIR::IterAllocate => {}
             DMIR::IncRefCount { .. } => panic!(),
             DMIR::DecRefCount { .. } => panic!()
         }
@@ -594,6 +616,7 @@ fn describe_source(src: &RValue, fmt: &mut Formatter<'_>, phi_stack: &mut HashSe
         RValue::ProduceSource(pos, _) => write!(fmt, "ProduceSource({})", pos),
         RValue::UncountedSource(pos) => write!(fmt, "UncountedSource({})", pos),
         RValue::MovedInSource(pos) => write!(fmt, "MovedInSource({})", pos),
+        RValue::PullInSource(pos, _) => write!(fmt, "PullInSource({})", pos),
         Phi(id, sources) => {
             if phi_stack.insert(id.clone()) {
                 write!(fmt, "Phi({}, [", id)?;
@@ -688,8 +711,9 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>, parameter_count: usize)
                 pending.push(*drain);
                 for source in sources {
                     match source {
-                        RValue::MovedInSource(_) => {
-                            decision_by_drain.insert(drain, Decision::Keep);
+                        RValue::MovedInSource(_) | RValue::PullInSource(_, _) => {
+                            decision_by_drain.insert(*drain, Decision::Keep);
+                            decision_by_source.insert(*source, Decision::Keep);
                             continue'outer;
                         }
                         _ => {}
@@ -761,7 +785,8 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>, parameter_count: usize)
             RValue::ProduceSource(pos, _) => pos,
             RValue::MovedInSource(pos) => pos,
             RValue::UncountedSource(pos) => pos,
-            Phi(_, _) => continue
+            RValue::PullInSource(pos, _) => pos,
+            Phi(_, _) => continue,
         };
 
         let decision = decision_by_source.get(value);
@@ -806,13 +831,12 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>, parameter_count: usize)
             continue;
         }
         match &**source {
-            RValue::ProduceSource(pos, op) => {
+            RValue::ProduceSource(pos, op) | RValue::PullInSource(pos, op) => {
                 let element = ir.get_mut(pos.clone()).unwrap();
                 match element {
                     _ => {
-                        let mut tmp = DMIR::End;
-                        std::mem::swap(element, &mut tmp);
-                        *element = create_inc_ref_count_ir(tmp, op);
+                        let instruction = std::mem::replace(element, DMIR::Nop);
+                        *element = create_inc_ref_count_ir(instruction, op);
                     }
                 }
             }

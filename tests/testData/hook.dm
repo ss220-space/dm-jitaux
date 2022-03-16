@@ -64,3 +64,6 @@
 // This function is treated as intrinsic in dmJIT, if calling proc JIT-ed and not yet deopt-ed, returns TRUE
 /proc/dmjit_is_optimized()
     return FALSE
+
+// Intrinsic to emulate deopt
+/proc/dm_jitaux_deopt()

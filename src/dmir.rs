@@ -44,6 +44,12 @@ pub enum DMIR {
     ListAssociativeSet,
     NewVectorList(u32),
     NewAssocList(u32, Box<DMIR>),
+    ArrayIterLoadFromList(dmasm::list_operands::TypeFilter),
+    ArrayIterLoadFromObject(dmasm::list_operands::TypeFilter),
+    IterAllocate, // allocates new iterator and stores ref on iter stack, replacing last
+    IterPop,
+    IterPush,
+    IterNext,
     GetStep,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
@@ -719,6 +725,32 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::Swap); // c (a+c) b
                         irs.push(DMIR::SwapX1); // (a+c) b c
                     }
+                    Instruction::IterLoad(kind, bitmask) => {
+                        irs.push(DMIR::IterAllocate);
+                        match kind {
+                            5 => {
+                                if bitmask.contains(dmasm::list_operands::TypeFilter::DATUM_INSTANCES) {
+                                    log::info!("Unsupported iter type {}", insn);
+                                    supported = false;
+                                }
+                                irs.append(
+                                    &mut build_type_switch!(
+                                        @stack 0,
+                                        (@union ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area) => vec![DMIR::ArrayIterLoadFromObject(bitmask)],
+                                        (ValueTag::List) => vec![DMIR::ListCopy, DMIR::ArrayIterLoadFromList(bitmask)],
+                                        (@any) => deopt!(@type_switch)
+                                    )
+                                )
+                            }
+                            _ => {
+                                log::info!("Unsupported iter type {}", insn);
+                                supported = false;
+                            }
+                        }
+                    }
+                    Instruction::IterNext => irs.push(DMIR::IterNext),
+                    Instruction::IterPop => irs.push(DMIR::IterPop),
+                    Instruction::IterPush => irs.push(DMIR::IterPush),
                     _ => {
                         log::info!("Unsupported insn {}", insn);
                         supported = false;

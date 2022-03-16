@@ -2,6 +2,7 @@ use inkwell::execution_engine::ExecutionEngine;
 use inkwell::module::Module;
 
 
+mod iterators;
 pub(crate) mod deopt;
 pub(crate) mod debug;
 pub(crate) mod lists;
@@ -67,10 +68,11 @@ macro_rules! find_by_reference {
 pub(crate) use find_by_reference;
 
 pub(crate) fn init() {
-    deopt::initialize_deopt();
-    debug::init();
-    lists::init();
-    dm_types::init();
+	deopt::initialize_deopt();
+	debug::init();
+	lists::init();
+	dm_types::init();
+	iterators::init();
 }
 
 pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &ExecutionEngine) {
@@ -122,4 +124,10 @@ pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &Executi
     runtime_export!(set_variable);
     runtime_export!(call_proc_by_name);
     runtime_export!(call_proc_by_id);
+
+	use iterators::*;
+	runtime_export!(load_array_iter_from_list, "iter.load_array_from_list");
+	runtime_export!(load_array_iter_from_object, "iter.load_array_from_object");
+	runtime_export!(iter_free, "iter.free");
+	runtime_export!(iter_unref, "iter.unref");
 }
