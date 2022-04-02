@@ -5,7 +5,60 @@ use inkwell::module::Module;
 pub(crate) mod deopt;
 pub(crate) mod debug;
 pub(crate) mod lists;
+mod signature_utils;
 
+macro_rules! byond_imports {
+    ($($(#[cfg($att:meta)])? $name:ident:$t:ty = $body:expr;)+) => {
+        $(
+            $(#[cfg($att)])?
+            static $name: Lazy<$t> = Lazy::new(|| {
+                $body
+            });
+        )+
+        fn init_byond_imports() {
+            $(
+                $(#[cfg($att)])?
+                {
+                    Lazy::force(&$name);
+                }
+            )+
+        }
+    };
+}
+
+pub(crate) use byond_imports;
+
+macro_rules! find_by {
+    ($func:ident, $($att:meta => $signature:literal),+) => ({
+		$(
+			#[cfg($att)]
+			unsafe {
+                use crate::pads::signature_utils::ExSignature;
+                std::mem::transmute(
+					crate::pads::signature_utils::$func(
+						&crate::pads::signature_utils::SCANNER,
+						dmjit_macro::ex_signature!($signature)
+					)
+				)
+            }
+		)+
+	});
+}
+pub(crate) use find_by;
+
+macro_rules! find_by_call {
+	($($rest:tt)+) => ({
+		crate::pads::find_by!(find_by_call, $($rest)+)
+	});
+}
+pub(crate) use find_by_call;
+
+macro_rules! find_by_reference {
+	($($rest:tt)+) => ({
+		crate::pads::find_by!(find_by_reference, $($rest)+)
+	});
+}
+pub(crate) use find_by_reference;
 
 pub(crate) fn init() {
 	deopt::initialize_deopt();
