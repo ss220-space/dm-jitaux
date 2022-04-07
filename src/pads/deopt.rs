@@ -54,7 +54,7 @@ fn do_call_trampoline(proc_instance: *mut ProcInstance) -> Value {
 
 #[cfg(windows)]
 fn do_call_trampoline(proc_instance: *mut ProcInstance) -> Value {
-    *out = DO_CALL.unwrap()(proc);
+    unsafe { return (DO_CALL).unwrap()(proc_instance); }
 }
 
 #[naked]
