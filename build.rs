@@ -2,6 +2,14 @@ use std::process::{Command};
 use anyhow::Result;
 use vergen::{Config, TimeZone, vergen};
 
+
+fn llvm_config(param: &str) -> String {
+    let config_path = std::env::var("DEP_LLVM_12_CONFIG_PATH").unwrap();
+    let output = Command::new(config_path).arg(param).output().unwrap();
+
+    return String::from_utf8(output.stdout).unwrap()
+}
+
 fn main() -> Result<()> {
     // Generate the default 'cargo:' instruction output
     let mut config = Config::default();
@@ -18,6 +26,7 @@ fn main() -> Result<()> {
     //println!("cargo:rustc-cfg=debug_on_call_print");
 
     cc::Build::new()
+        .include(llvm_config("--includedir").trim_end())
         .include("src/")
         .file("src/sectionMemoryManagerBindings.cpp")
         .cpp(true)
