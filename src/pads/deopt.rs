@@ -106,6 +106,7 @@ impl Frame {
             Register::ECX => self.ecx,
             Register::EDX => self.edx,
             Register::EBX => self.ebx,
+            Register::ESP => self.esp + 0xc + 4 + 8, // 0xc - alignment, 4 - return address, 8 - id
             Register::EBP => self.ebp,
             Register::ESI => self.esi,
             Register::EDI => self.edi,
@@ -171,6 +172,7 @@ enum Register {
     ECX = 0x1,
     EDX = 0x2,
     EBX = 0x3,
+    ESP = 0x4,
     EBP = 0x5,
     ESI = 0x6,
     EDI = 0x7
