@@ -31,6 +31,8 @@ pub enum DMIR {
     FloatAbs,
     FloatInc,
     FloatDec,
+    BitAnd,
+    BitOr,
     RoundN,
     ListCheckSizeDeopt(ValueLocation, ValueLocation, Box<DMIR>),
     ListCopy,
@@ -301,6 +303,38 @@ fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, s
                 )
             );
         }
+        Instruction::Band => {
+            out.append(&mut type_switch!(
+                    @switch_counter switch_counter,
+                    @stack 1,
+                    (ValueTag::Null) => vec![DMIR::Pop, DMIR::Pop, DMIR::PushInt(0)],
+                    (ValueTag::Number) => type_switch!(
+                        @switch_counter switch_counter,
+                        @stack 0,
+                        (ValueTag::Null) => vec![DMIR::Pop, DMIR::Pop, DMIR::PushInt(0)],
+                        (@union ValueTag::Number) => vec![DMIR::BitAnd],
+                        (@any) => deopt!()
+                    ),
+                    (@any) => deopt!()
+                )
+            );
+        }
+        Instruction::Bor => {
+            out.append(&mut type_switch!(
+                    @switch_counter switch_counter,
+                    @stack 1,
+                    (ValueTag::Null) => vec![DMIR::Swap, DMIR::Pop],
+                    (ValueTag::Number) => type_switch!(
+                        @switch_counter switch_counter,
+                        @stack 0,
+                        (ValueTag::Null) => vec![DMIR::Pop],
+                        (@union ValueTag::Number) => vec![DMIR::BitOr],
+                        (@any) => deopt!()
+                    ),
+                    (@any) => deopt!()
+                )
+            );
+        }
         _ => {}
     }
 }
@@ -343,7 +377,7 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::SetVar(vr) => {
                         decode_set_var(&vr, &mut irs)
                     }
-                    Instruction::Add | Instruction::Sub => {
+                    Instruction::Add | Instruction::Sub | Instruction::Band | Instruction::Bor => {
                         decode_binary_instruction(insn, &data, &proc, &mut switch_counter, &mut irs)
                     }
                     Instruction::Mul => {
