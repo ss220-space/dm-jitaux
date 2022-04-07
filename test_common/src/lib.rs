@@ -164,7 +164,7 @@ impl <'l> DMTest<'l> {
     fn run_dm(&self) -> io::Result<ExitStatus> {
         cmd_dreamdaemon()
             .current_dir(self.work_dir())
-            .arg(self.work_dir().join("test.dmb").to_str().unwrap())
+            .arg("test.dmb")
             .arg("-trusted")
             .spawn()?
             .wait()
