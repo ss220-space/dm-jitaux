@@ -333,7 +333,7 @@ impl<'t> Analyzer<'t> {
                 }
                 self.block_ended = true;
             }
-            DMIR::FloatAdd | DMIR::FloatSub | DMIR::FloatMul | DMIR::FloatDiv | DMIR::RoundN => {
+            DMIR::FloatAdd | DMIR::FloatSub | DMIR::FloatMul | DMIR::FloatDiv | DMIR::RoundN | DMIR::BitAnd | DMIR::BitOr => {
                 op_effect!(
                     @consume @stack,
                     @consume @stack,
