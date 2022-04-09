@@ -2,6 +2,8 @@ use std::ffi::CStr;
 
 use auxtools::{sigscan, Value};
 use auxtools::raw_types::values::{ValueData, ValueTag};
+use once_cell::sync::Lazy;
+use crate::pads::{byond_imports, find_by_reference};
 
 use crate::pads::lists::get_list;
 
@@ -22,14 +24,16 @@ pub extern "C" fn handle_debug_val(val: ValueRaw) {
     log::debug!("dbg: {:#X} {}", val.tag, unsafe { val.data.id })
 }
 
-pub static mut DATUM_ARRAY_PTR: *mut *mut *mut u8 = std::ptr::null_mut();
+byond_imports!(
+    var DATUM_ARRAY_PTR: *mut *mut u8
+        = find_by_reference!(
+            unix    => "8b 15 >?? ?? ?? ?? 8b 14 82 85 d2 74 ad 8b 4a 18",
+            windows => "a1 >?? ?? ?? ?? 89 0c b0 33 c0 c7 01 ff ff 00 00 89 41 08 66 89"
+        );
+);
 
 pub fn init() {
-    let scanner = auxtools::sigscan::Scanner::for_module(auxtools::BYONDCORE).unwrap();
-
-    unsafe {
-        DATUM_ARRAY_PTR = *((scanner.find(signature!("8b 15 ?? ?? ?? ?? 8b 14 82 85 d2 74 ad 8b 4a 18")).unwrap()).add(2) as *mut *mut *mut *mut u8);
-    }
+    init_byond_imports();
 }
 
 pub fn get_ref_count(value: Value) -> u32 {
@@ -37,8 +41,7 @@ pub fn get_ref_count(value: Value) -> u32 {
         log::debug!("{:?}", value.raw.tag);
         log::debug!("{:?}", value);
         return if value.raw.tag == ValueTag::Datum {
-            let array_ptr = *DATUM_ARRAY_PTR;
-            let datum_ptr = *(array_ptr.add(value.raw.data.id as usize));
+            let datum_ptr = *(DATUM_ARRAY_PTR.add(value.raw.data.id as usize));
             let res = *(datum_ptr.add(0x18) as *mut u32);
             log::debug!("datum ref count: {}", res);
             res
