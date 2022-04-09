@@ -5,8 +5,16 @@ use auxtools::{DMResult, Value};
 use crate::pads;
 
 #[hook("/proc/dmjit_exit_test")]
-pub fn exit_test() {
-    exit(0);
+pub fn exit_test() -> DMResult {
+    #[cfg(windows)]
+    {
+        unsafe { winapi::um::winuser::PostQuitMessage(0); }
+        DMResult::Ok(Value::null())
+    }
+    #[cfg(unix)]
+    {
+        exit(0);
+    }
 }
 
 #[hook("/proc/dmjit_get_ref_count")]
