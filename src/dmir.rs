@@ -312,7 +312,7 @@ fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, s
                         @switch_counter switch_counter,
                         @stack 0,
                         (ValueTag::Null) => vec![DMIR::Pop, DMIR::Pop, DMIR::PushInt(0)],
-                        (@union ValueTag::Number) => vec![DMIR::BitAnd],
+                        (ValueTag::Number) => vec![DMIR::BitAnd],
                         (@any) => deopt!()
                     ),
                     (@any) => deopt!()
@@ -328,7 +328,7 @@ fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, s
                         @switch_counter switch_counter,
                         @stack 0,
                         (ValueTag::Null) => vec![DMIR::Pop],
-                        (@union ValueTag::Number) => vec![DMIR::BitOr],
+                        (ValueTag::Number) => vec![DMIR::BitOr],
                         (@any) => deopt!()
                     ),
                     (@any) => deopt!()
