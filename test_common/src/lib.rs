@@ -165,6 +165,7 @@ impl <'l> DMTest<'l> {
         cmd_dreamdaemon()
             .current_dir(self.work_dir())
             .arg("test.dmb")
+            .arg("auto")
             .arg("-trusted")
             .spawn()?
             .wait()
