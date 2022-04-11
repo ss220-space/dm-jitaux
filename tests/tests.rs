@@ -35,7 +35,7 @@ test_dm!(test_abs);
 test_dm!(test_if_bool_ops);
 test_dm!(test_sub);
 test_dm!(test_aug_op);
-test_dm!(test_is);
+test_dm!(test_is + "test_is_turf.dmm");
 test_dm!(test_ref_count);
 test_dm!(test_local_var);
 test_dm!(test_null_cmp);

@@ -5,6 +5,7 @@ use inkwell::module::Module;
 pub(crate) mod deopt;
 pub(crate) mod debug;
 pub(crate) mod lists;
+pub(crate) mod dm_types;
 mod signature_utils;
 
 macro_rules! byond_imports {
@@ -68,6 +69,7 @@ pub(crate) fn init() {
 	deopt::initialize_deopt();
 	debug::init();
 	lists::init();
+	dm_types::init();
 }
 
 pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &ExecutionEngine) {
@@ -87,6 +89,9 @@ pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &Executi
 
 	runtime_export!(debug::handle_debug);
 	runtime_export!(debug::handle_debug_val);
+
+	use dm_types::*;
+	runtime_export!(is_dm_entity);
 
 	use lists::*;
 	runtime_export!(list_indexed_get);
