@@ -8,22 +8,26 @@ pub(crate) mod lists;
 mod signature_utils;
 
 macro_rules! byond_imports {
-    ($($(#[cfg($att:meta)])? $name:ident:$t:ty = $body:expr;)+) => {
+    ($($(#[cfg($att:meta)])? $kind:tt $name:ident:$t:ty = $body:expr;)+) => {
         $(
             $(#[cfg($att)])?
-            static $name: Lazy<$t> = Lazy::new(|| {
-                $body
-            });
+            byond_imports!($kind $name $t = $body);
         )+
         fn init_byond_imports() {
             $(
                 $(#[cfg($att)])?
                 {
-                    Lazy::force(&$name);
+                    $name.init();
                 }
             )+
         }
     };
+	(fn $name:ident $t:ty = $body:expr) => {
+		static $name: crate::pads::signature_utils::DynamicBoundFunction<$t> = $body;
+	};
+	(var $name:ident $t:ty = $body:expr) => {
+		static $name: crate::pads::signature_utils::DynamicBoundVariable<$t> = $body;
+	};
 }
 
 pub(crate) use byond_imports;
@@ -48,14 +52,14 @@ pub(crate) use find_by;
 
 macro_rules! find_by_call {
 	($($rest:tt)+) => ({
-		crate::pads::find_by!(find_by_call, $($rest)+)
+		crate::pads::signature_utils::DynamicBoundFunction::new(|| crate::pads::find_by!(find_by_call, $($rest)+) )
 	});
 }
 pub(crate) use find_by_call;
 
 macro_rules! find_by_reference {
 	($($rest:tt)+) => ({
-		crate::pads::find_by!(find_by_reference, $($rest)+)
+		crate::pads::signature_utils::DynamicBoundVariable::new(|| crate::pads::find_by!(find_by_reference, $($rest)+) )
 	});
 }
 pub(crate) use find_by_reference;

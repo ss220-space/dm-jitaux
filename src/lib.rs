@@ -2,6 +2,7 @@
 #![feature(once_cell)]
 #![feature(asm)]
 #![feature(naked_functions)]
+#![feature(const_fn_fn_ptr_basics)]
 
 mod compile;
 pub(crate) mod pads;
