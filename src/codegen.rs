@@ -1196,6 +1196,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let test_value = self.emit_store_meta_value(MetaValue::with_tag(ValueTag::Number, test_value_i32, self));
                 self.stack().push(test_value)
             }
+            DMIR::SetTestFlag(val) => {
+                self.test_res = self.context.bool_type().const_int((*val) as u64, false);
+            }
             DMIR::JZ(lbl) => {
                 self.emit_conditional_jump(func, lbl, self.builder.build_not(self.test_res, "jz"))
             }

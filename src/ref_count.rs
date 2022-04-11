@@ -368,6 +368,7 @@ impl<'t> Analyzer<'t> {
             DMIR::PushTestFlag => {
                 op_effect!(@produce_uncounted @stack);
             }
+            DMIR::SetTestFlag(_) => {}
             DMIR::Pop => {
                 op_effect!(@consume @stack);
             }
