@@ -1191,7 +1191,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(result_value);
             }
             DMIR::PushTestFlag => {
-                let test_value_f32 = self.builder.build_signed_int_to_float(self.test_res.unwrap(), self.context.f32_type(), "test_flag_to_f32");
+                let test_value_f32 = self.builder.build_unsigned_int_to_float(self.test_res, self.context.f32_type(), "test_flag_to_f32");
                 let test_value_i32 = self.builder.build_bitcast(test_value_f32, self.context.i32_type(), "test_value_i32");
                 let test_value = self.emit_store_meta_value(MetaValue::with_tag(ValueTag::Number, test_value_i32, self));
                 self.stack().push(test_value)
