@@ -51,7 +51,7 @@ pub enum DMIR {
     Not,
     Test,
     TestEqual,
-    IsNull,
+    TestIsDMEntity,
     JZ(String),
     Dup, // Duplicate last value on stack
     DupX1, // Duplicate top value and insert one slot back ..., a, b -> ..., b, a, b
@@ -559,7 +559,63 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         decode_set_var(&var, &mut irs);
                     }
                     Instruction::IsNull => {
-                        irs.push(DMIR::IsNull)
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Null) => vec![DMIR::Pop, DMIR::PushInt(1)],
+                            (@any) => vec![DMIR::Pop, DMIR::PushInt(0)]
+                        ));
+                    }
+                    Instruction::IsNum => {
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Number) => vec![DMIR::Pop, DMIR::PushInt(1)],
+                            (@any) => vec![DMIR::Pop, DMIR::PushInt(0)]
+                        ));
+                    }
+                    Instruction::IsText => {
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::String) => vec![DMIR::Pop, DMIR::PushInt(1)],
+                            (@any) => vec![DMIR::Pop, DMIR::PushInt(0)]
+                        ));
+                    }
+                    Instruction::IsTurf => {
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Turf) => vec![DMIR::TestIsDMEntity],
+                            (@any) => vec![DMIR::Pop, DMIR::SetTestFlag(false)]
+                        ));
+                    }
+                    Instruction::IsObj => {
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Obj) => vec![DMIR::TestIsDMEntity],
+                            (@any) => vec![DMIR::Pop, DMIR::SetTestFlag(false)]
+                        ));
+                    }
+                    Instruction::IsMob => {
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Mob) => vec![DMIR::TestIsDMEntity],
+                            (@any) => vec![DMIR::Pop, DMIR::SetTestFlag(false)]
+                        ));
+                    }
+                    Instruction::IsArea => {
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (ValueTag::Area) => vec![DMIR::TestIsDMEntity],
+                            (@any) => vec![DMIR::Pop, DMIR::SetTestFlag(false)]
+                        ));
+                    }
+                    Instruction::IsLoc => {
+                        irs.push(DMIR::TestIsDMEntity);
+                    }
+                    Instruction::IsMovable => {
+                        irs.append(&mut build_type_switch!(
+                            @stack 0,
+                            (@union ValueTag::Mob, ValueTag::Obj) => vec![DMIR::TestIsDMEntity],
+                            (@any) => vec![DMIR::Pop, DMIR::SetTestFlag(false)]
+                        ));
                     }
                     Instruction::Check2Numbers => {
                         irs.push(CheckTypeDeopt(

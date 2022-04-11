@@ -1130,15 +1130,17 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let new_value = self.stack().pop();
                 self.args[*idx as usize] = new_value;
             }
-            DMIR::IsNull => {
+            DMIR::TestIsDMEntity => {
                 let value = self.stack().pop();
-                let meta = self.emit_load_meta_value(value);
-                let const_null_tag = self.const_tag(ValueTag::Null);
-                let result = self.builder.build_int_compare(IntPredicate::EQ, meta.tag, const_null_tag, "check_null");
-                let meta_value = self.emit_boolean_to_number(result);
-                let result_value = self.emit_store_meta_value(meta_value);
+                let is_dm_entity = self.module.get_function("dmir.runtime.is_dm_entity").unwrap();
 
-                self.stack().push(result_value);
+                let result = self.builder.build_call(
+                    is_dm_entity,
+                    &[
+                        value.into()
+                    ], "is_dm_entity").as_any_value_enum().into_int_value();
+
+                self.test_res = result;
             }
             DMIR::Test => {
                 let value = self.stack().pop();

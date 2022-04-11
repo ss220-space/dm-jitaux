@@ -490,10 +490,9 @@ impl<'t> Analyzer<'t> {
                     @consume @stack
                 );
             }
-            DMIR::IsNull => {
+            DMIR::TestIsDMEntity => {
                 op_effect!(
-                    @consume @stack,
-                    @produce @stack
+                    @consume @stack
                 );
             }
             DMIR::DupX1 => {
