@@ -45,6 +45,7 @@ pub enum DMIR {
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
     PushTestFlag, // Push test flag value as Number
+    SetTestFlag(bool),
     Pop,
     Ret,
     Not,
