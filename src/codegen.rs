@@ -27,7 +27,7 @@ pub struct CodeGen<'ctx, 'a> {
     loop_iter_counter: IntValue<'ctx>,
     sub_call_arg_array_ptr: Option<PointerValue<'ctx>>,
     sub_ret_ptr: Option<PointerValue<'ctx>>,
-    test_res: Option<IntValue<'ctx>>,
+    test_res: IntValue<'ctx>,
     internal_test_flag: Option<IntValue<'ctx>>,
     block_map: BlockMap<'ctx>,
     block_ended: bool,
@@ -45,6 +45,7 @@ struct LabelBlockInfo<'ctx> {
     locals: HashMap<u32, PhiValue<'ctx>>,
     stack: Vec<PhiValue<'ctx>>,
     cache: Option<PhiValue<'ctx>>,
+    test_res: Option<PhiValue<'ctx>>,
     loop_iter_counter: Option<PhiValue<'ctx>>
 }
 
@@ -137,6 +138,7 @@ struct CodeGenValuesRef<'ctx, 'a> {
     stack: &'a Vec<StructValue<'ctx>>,
     locals: &'a HashMap<u32, StructValue<'ctx>>,
     cache: &'a Option<StructValue<'ctx>>,
+    test_res: &'a IntValue<'ctx>,
     loop_iter_counter: &'a IntValue<'ctx>,
 }
 
@@ -147,6 +149,7 @@ macro_rules! create_code_gen_values_ref {
             stack: &$code_gen.stack_loc,
             locals: &$code_gen.locals,
             cache: &$code_gen.cache,
+            test_res: &$code_gen.test_res,
             loop_iter_counter: &$code_gen.loop_iter_counter,
         }
     };
@@ -200,6 +203,7 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
                     locals: Default::default(),
                     stack: vec![],
                     cache: None,
+                    test_res: None,
                     loop_iter_counter: None
                 }
             });
@@ -221,6 +225,7 @@ impl<'ctx, 'a> BlockBuilder<'ctx, 'a> {
         self.merge_vec(&mut entry.stack, values.stack, "stack_phi", current_block, new_block_created);
 
         self.merge_option(&mut entry.cache, values.cache, "cache_phi", current_block, new_block_created);
+        self.merge_option(&mut entry.test_res, &Some(values.test_res.clone()), "test_res_phi", current_block, new_block_created);
         self.merge_option(&mut entry.loop_iter_counter, &Some(values.loop_iter_counter.clone()), "loop_iter_counter_phi", current_block, new_block_created);
 
         self.builder.position_at_end(current_block);
@@ -262,7 +267,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
             loop_iter_counter: context.i32_type().const_int(0xFFFFF, false),
             sub_call_arg_array_ptr: None,
             sub_ret_ptr: None,
-            test_res: None,
+            test_res: context.bool_type().const_int(false as u64, false),
             internal_test_flag: None,
             block_map: HashMap::new(),
             block_ended: false,
@@ -1139,7 +1144,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let value = self.stack().pop();
                 let res = self.emit_check_is_true(self.emit_load_meta_value(value));
 
-                self.test_res = Some(res);
+                self.test_res = res;
             }
             DMIR::TestEqual => {
                 let second = self.stack().pop();
@@ -1174,7 +1179,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     "select_compare"
                 ).into_int_value();
 
-                self.test_res = Some(result);
+                self.test_res = result;
             }
             DMIR::Not => {
                 let value = self.stack().pop();
@@ -1192,7 +1197,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.stack().push(test_value)
             }
             DMIR::JZ(lbl) => {
-                self.emit_conditional_jump(func, lbl, self.builder.build_not(self.test_res.unwrap(), "jz"))
+                self.emit_conditional_jump(func, lbl, self.builder.build_not(self.test_res, "jz"))
             }
             DMIR::Dup => {
                 let value = self.stack().pop();
@@ -1264,7 +1269,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 }
                 self.block_ended = false;
 
-                self.test_res = None;
                 self.stack_loc.clear();
                 self.locals.clear();
                 self.args.clear();
@@ -1286,6 +1290,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     self.cache = Some(cache_phi.as_basic_value().into_struct_value());
                 }
 
+                self.test_res = target.test_res.as_ref().unwrap().as_basic_value().into_int_value();
                 self.loop_iter_counter = target.loop_iter_counter.as_ref().unwrap().as_basic_value().into_int_value();
             }
             DMIR::End => {
@@ -1306,7 +1311,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let cache_meta = self.emit_load_meta_value(self.cache.unwrap_or(self.val_type.const_zero()));
 
                 let test_res_u8 = self.builder.build_int_z_extend(
-                    self.test_res.unwrap_or(self.context.bool_type().const_int(0, false)),
+                    self.test_res,
                     self.context.i8_type(),
                     "test_res_u8"
                 );
