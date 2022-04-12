@@ -405,6 +405,13 @@ impl<'t> Analyzer<'t> {
                     @move_out @stack
                 );
             }
+            DMIR::GetStep => {
+                op_effect!(
+                    @consume @stack,
+                    @consume @stack,
+                    @produce @stack
+                );
+            }
             DMIR::Ret => {
                 unset_locals_and_cache!();
                 op_effect!(@move_out @stack);

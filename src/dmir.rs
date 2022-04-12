@@ -42,6 +42,7 @@ pub enum DMIR {
     ListIndexedSet,
     ListAssociativeGet,
     ListAssociativeSet,
+    GetStep,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
     PushTestFlag, // Push test flag value as Number
@@ -446,6 +447,9 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                                 (@any) => vec![DMIR::ListAssociativeSet]
                             )
                         );
+                    }
+                    Instruction::GetStep => {
+                        irs.push(DMIR::GetStep);
                     }
                     Instruction::CallGlob(arg_count, callee) => {
                         match callee.path.as_ref() {

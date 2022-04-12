@@ -46,3 +46,4 @@ test_dm!(test_list_get_set);
 test_dm!(test_list_binary_ops);
 test_dm!(test_loops);
 test_dm!(test_inc_dec);
+test_dm!(test_step + "test_step.dmm");

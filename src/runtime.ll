@@ -27,6 +27,8 @@ declare external void     @dmir.runtime.list_remove(%DMValue, %DMValue)
 declare external i1       @dmir.runtime.is_dm_entity(%DMValue)
 declare external i1       @dmir.runtime.is_subtype_of(%DMValue, %DMValue)
 
+declare external %DMValue @dmir.runtime.get_step(%DMValue, i8)
+
 ; It should be guaranteed by caller, that on entry to this function, arg_count is at least caller_arg_count - 1
 define void @dmir.intrinsic.unref_excess_arguments_internal(%DMValue* %args, i32 %arg_count, i32 %caller_arg_count) cold {
 entry:
