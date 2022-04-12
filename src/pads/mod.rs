@@ -92,6 +92,7 @@ pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &Executi
 
 	use dm_types::*;
 	runtime_export!(is_dm_entity);
+	runtime_export!(is_subtype_of);
 
 	use lists::*;
 	runtime_export!(list_indexed_get);

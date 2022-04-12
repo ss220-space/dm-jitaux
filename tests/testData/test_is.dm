@@ -8,7 +8,8 @@
     compile_proc(/proc/is_area)
     compile_proc(/proc/is_loc)
     compile_proc(/proc/is_movable)
-    CHECK_INSTALL_COMPILED // RES: /is_null, /is_text, /is_num, /is_turf, /is_obj, /is_mob, /is_area, /is_loc, /is_movable
+    compile_proc(/proc/is_type)
+    CHECK_INSTALL_COMPILED // RES: /is_null, /is_text, /is_num, /is_turf, /is_obj, /is_mob, /is_area, /is_loc, /is_movable, /is_type
 
     RES(is_null(null)) // RES: 1
     RES(is_null(1)) // RES: 0
@@ -51,6 +52,15 @@
     RES(is_movable(player)) // RES: 1
     RES(is_movable("tile")) // RES: 0
 
+    var/obj/items/category/test/test = new /obj/items/category/test()
+
+    RES(is_type("string", /obj/items)) // RES: 0
+    RES(is_type(test, /obj/items/category/test)) // RES: 1
+    RES(is_type(test, /obj/items/category)) // RES: 1
+    RES(is_type(test, /obj/items)) // RES: 1
+    RES(is_type(test, /obj/water)) // RES: 0
+    RES(is_type(water, /obj/items)) // RES: 0
+
 /proc/is_null(a)
     return isnull(a)
 
@@ -78,8 +88,17 @@
 /proc/is_movable(a)
     return ismovable(a)
 
+/proc/is_type(a, b)
+    return istype(a, b)
+
 /turf/burning_ground
 
 /obj/water
+
+/obj/items
+
+/obj/items/category
+
+/obj/items/category/test
 
 /mob/player

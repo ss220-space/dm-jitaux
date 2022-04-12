@@ -1142,6 +1142,23 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 self.test_res = result;
             }
+            DMIR::IsSubtypeOf => {
+                let first = self.stack().pop();
+                let second = self.stack().pop();
+                let is_dm_entity = self.module.get_function("dmir.runtime.is_subtype_of").unwrap();
+
+                let result = self.builder.build_call(
+                    is_dm_entity,
+                    &[
+                        second.into(),
+                        first.into()
+                    ], "is_subtype_of").as_any_value_enum().into_int_value();
+
+                let meta_value = self.emit_boolean_to_number(result);
+                let result_value = self.emit_store_meta_value(meta_value);
+
+                self.stack().push(result_value);
+            }
             DMIR::Test => {
                 let value = self.stack().pop();
                 let res = self.emit_check_is_true(self.emit_load_meta_value(value));
