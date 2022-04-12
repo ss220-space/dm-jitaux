@@ -1,6 +1,4 @@
 use auxtools::raw_types::values::Value;
-use auxtools::sigscan;
-use once_cell::sync::Lazy;
 use crate::pads::{byond_imports, find_by_call};
 
 byond_imports!(
