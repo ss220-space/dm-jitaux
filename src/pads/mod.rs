@@ -9,7 +9,7 @@ pub(crate) mod dm_types;
 mod signature_utils;
 
 macro_rules! byond_imports {
-    ($($(#[cfg($att:meta)])? $kind:tt $name:ident:$t:ty = $body:expr;)+) => {
+    ($($(#[cfg($att:meta)])? $kind:ident $name:ident:$t:ty = $body:expr;)+) => {
         $(
             $(#[cfg($att)])?
             byond_imports!($kind $name $t = $body);
