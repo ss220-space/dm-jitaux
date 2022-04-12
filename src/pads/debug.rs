@@ -1,8 +1,7 @@
 use std::ffi::CStr;
 
-use auxtools::{sigscan, Value};
+use auxtools::Value;
 use auxtools::raw_types::values::{ValueData, ValueTag};
-use once_cell::sync::Lazy;
 use crate::pads::{byond_imports, find_by_reference};
 
 use crate::pads::lists::get_list;

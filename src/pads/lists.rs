@@ -3,8 +3,6 @@ use std::ptr::null_mut;
 use auxtools::raw_types::funcs::{append_to_list, dec_ref_count, remove_from_list};
 use auxtools::raw_types::lists::{AssociativeListEntry, List};
 use auxtools::raw_types::values::{Value, ValueData, ValueTag};
-use auxtools::sigscan;
-use once_cell::sync::Lazy;
 use crate::pads::{byond_imports, find_by_call, find_by_reference};
 
 byond_imports!(
