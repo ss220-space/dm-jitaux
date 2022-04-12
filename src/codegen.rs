@@ -992,6 +992,25 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         value_struct.into()
                     ], "list_associative_set");
             }
+            DMIR::GetStep => {
+                let first = self.stack().pop();
+                let second = self.stack().pop();
+
+                let dir = self.emit_load_meta_value(first);
+                let dir_num = self.emit_to_number_or_zero(func, dir);
+
+                let dir_u8 = self.builder.build_float_to_unsigned_int(dir_num, self.context.i8_type(), "dir_to_u8");
+
+                let get_step = self.module.get_function("dmir.runtime.get_step").unwrap();
+
+                let res = self.builder.build_call(
+                    get_step,
+                    &[
+                        second.into(),
+                        dir_u8.into()
+                    ], "get_step").as_any_value_enum().into_struct_value();
+                self.stack().push(res);
+            }
             DMIR::CallProcById(proc_id, proc_call_type, arg_count) => {
                 let src = self.stack().pop();
 

@@ -6,6 +6,7 @@ pub(crate) mod deopt;
 pub(crate) mod debug;
 pub(crate) mod lists;
 pub(crate) mod dm_types;
+pub(crate) mod turfs;
 mod signature_utils;
 
 macro_rules! byond_imports {
@@ -103,6 +104,9 @@ pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &Executi
 	runtime_export!(list_check_size);
 	runtime_export!(list_append);
 	runtime_export!(list_remove);
+
+    use turfs::*;
+    runtime_export!(get_step);
 
 	use auxtools::raw_types::funcs::inc_ref_count;
 	use auxtools::raw_types::funcs::dec_ref_count;
