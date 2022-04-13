@@ -67,14 +67,14 @@ macro_rules! find_by_reference {
 pub(crate) use find_by_reference;
 
 pub(crate) fn init() {
-	deopt::initialize_deopt();
-	debug::init();
-	lists::init();
-	dm_types::init();
+    deopt::initialize_deopt();
+    debug::init();
+    lists::init();
+    dm_types::init();
 }
 
 pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &ExecutionEngine) {
-	macro_rules! runtime_export {
+    macro_rules! runtime_export {
 		($func:expr) => ({
 			runtime_export!($func, stringify!($func))
 		});
@@ -86,38 +86,38 @@ pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &Executi
 	}
 
 
-	runtime_export!(deopt::handle_deopt_entry, "deopt");
+    runtime_export!(deopt::handle_deopt_entry, "deopt");
 
-	runtime_export!(debug::handle_debug);
-	runtime_export!(debug::handle_debug_val);
+    runtime_export!(debug::handle_debug);
+    runtime_export!(debug::handle_debug_val);
 
-	use dm_types::*;
-	runtime_export!(is_dm_entity);
+    use dm_types::*;
+    runtime_export!(is_dm_entity);
 	runtime_export!(is_subtype_of);
 
-	use lists::*;
-	runtime_export!(list_indexed_get);
-	runtime_export!(list_indexed_set);
-	runtime_export!(list_associative_get);
-	runtime_export!(list_associative_set);
-	runtime_export!(list_copy);
-	runtime_export!(list_check_size);
-	runtime_export!(list_append);
-	runtime_export!(list_remove);
+    use lists::*;
+    runtime_export!(list_indexed_get);
+    runtime_export!(list_indexed_set);
+    runtime_export!(list_associative_get);
+    runtime_export!(list_associative_set);
+    runtime_export!(list_copy);
+    runtime_export!(list_check_size);
+    runtime_export!(list_append);
+    runtime_export!(list_remove);
 
     use turfs::*;
     runtime_export!(get_step);
 
-	use auxtools::raw_types::funcs::inc_ref_count;
-	use auxtools::raw_types::funcs::dec_ref_count;
-	use auxtools::raw_types::funcs::get_variable;
-	use auxtools::raw_types::funcs::set_variable;
-	use auxtools::raw_types::funcs::call_datum_proc_by_name as call_proc_by_name;
-	use auxtools::raw_types::funcs::call_proc_by_id;
-	runtime_export!(inc_ref_count);
-	runtime_export!(dec_ref_count);
-	runtime_export!(get_variable);
-	runtime_export!(set_variable);
-	runtime_export!(call_proc_by_name);
-	runtime_export!(call_proc_by_id);
+    use auxtools::raw_types::funcs::inc_ref_count;
+    use auxtools::raw_types::funcs::dec_ref_count;
+    use auxtools::raw_types::funcs::get_variable;
+    use auxtools::raw_types::funcs::set_variable;
+    use auxtools::raw_types::funcs::call_datum_proc_by_name as call_proc_by_name;
+    use auxtools::raw_types::funcs::call_proc_by_id;
+    runtime_export!(inc_ref_count);
+    runtime_export!(dec_ref_count);
+    runtime_export!(get_variable);
+    runtime_export!(set_variable);
+    runtime_export!(call_proc_by_name);
+    runtime_export!(call_proc_by_id);
 }
