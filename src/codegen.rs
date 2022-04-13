@@ -1145,10 +1145,10 @@ impl<'ctx> CodeGen<'ctx, '_> {
             DMIR::IsSubtypeOf => {
                 let first = self.stack().pop();
                 let second = self.stack().pop();
-                let is_dm_entity = self.module.get_function("dmir.runtime.is_subtype_of").unwrap();
+                let is_subtype_of = self.module.get_function("dmir.runtime.is_subtype_of").unwrap();
 
                 let result = self.builder.build_call(
-                    is_dm_entity,
+                    is_subtype_of,
                     &[
                         second.into(),
                         first.into()

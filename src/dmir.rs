@@ -621,14 +621,16 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::IsType => {
                         irs.append(&mut build_type_switch!(
                             @stack 1,
-                            (@union ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::Image, ValueTag::List, ValueTag::Datum) => vec![DMIR::IsSubtypeOf],
+                            (@union ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::Image, ValueTag::List, ValueTag::Datum) =>
+                                vec![DMIR::IsSubtypeOf],
                             (@any) => deopt!(@type_switch)
                         ));
                     }
                     Instruction::IsSubPath => {
                         irs.append(&mut build_type_switch!(
                             @stack 1,
-                            (@union ValueTag::MobTypepath, ValueTag::ObjTypepath, ValueTag::TurfTypepath, ValueTag::AreaTypepath, ValueTag::DatumTypepath, ValueTag::SaveFileTypepath, ValueTag::ListTypepath, ValueTag::ClientTypepath, ValueTag::ImageTypepath) => vec![DMIR::IsSubtypeOf],
+                            (@union ValueTag::MobTypepath, ValueTag::ObjTypepath, ValueTag::TurfTypepath, ValueTag::AreaTypepath, ValueTag::DatumTypepath, ValueTag::SaveFileTypepath, ValueTag::ListTypepath, ValueTag::ClientTypepath, ValueTag::ImageTypepath) =>
+                                vec![DMIR::IsSubtypeOf],
                             (@any) => vec![DMIR::Pop, DMIR::PushInt(0)]
                         ));
                     }
