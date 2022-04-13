@@ -20,13 +20,13 @@ pub(crate) fn init() {
     init_byond_imports();
 }
 
-pub fn is_dm_entity(value: Value) -> bool {
+pub extern "cdecl" fn is_dm_entity(value: Value) -> bool {
     unsafe {
         return IS_DM_ENTITY(value);
     }
 }
 
-pub fn is_subtype_of(t: Value, value: Value) -> bool {
+pub extern "cdecl" fn is_subtype_of(t: Value, value: Value) -> bool {
     unsafe {
         return IS_SUBTYPE_OF(t, value);
     }
