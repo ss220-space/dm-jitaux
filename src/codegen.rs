@@ -520,6 +520,12 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.build_call(func, &[value.into()], "call_dec_ref_count");
     }
 
+    fn emit_dm_value_to_int(&self, value: MetaValue<'ctx>) -> IntValue<'ctx> {
+        let f32 = self.builder.build_bitcast(value.data, self.context.f32_type(), "cast_to_float").into_float_value();
+
+        return self.builder.build_float_to_signed_int(f32, self.context.i32_type(), "float_to_int");
+    }
+
     fn emit_read_value_location(&self, location: &ValueLocation) -> StructValue<'ctx> {
         match location {
             ValueLocation::Stack(rel) => {
@@ -748,11 +754,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::BitAnd => {
                 self.emit_bin_op(|first, second, code_gen| {
-                    let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
-                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
-
-                    let first_i32 = code_gen.builder.build_float_to_signed_int(first_f32, code_gen.context.i32_type(), "first_i32");
-                    let second_i32 = code_gen.builder.build_float_to_signed_int(second_f32, code_gen.context.i32_type(), "second_i32");
+                    let first_i32 = code_gen.emit_dm_value_to_int(first);
+                    let second_i32 = code_gen.emit_dm_value_to_int(second);
 
                     let result_value = code_gen.builder.build_and(second_i32, first_i32, "and");
 
@@ -765,11 +768,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::BitOr => {
                 self.emit_bin_op(|first, second, code_gen| {
-                    let first_f32 = code_gen.builder.build_bitcast(first.data, code_gen.context.f32_type(), "first_f32").into_float_value();
-                    let second_f32 = code_gen.builder.build_bitcast(second.data, code_gen.context.f32_type(), "second_f32").into_float_value();
-
-                    let first_i32 = code_gen.builder.build_float_to_signed_int(first_f32, code_gen.context.i32_type(), "first_i32");
-                    let second_i32 = code_gen.builder.build_float_to_signed_int(second_f32, code_gen.context.i32_type(), "second_i32");
+                    let first_i32 = code_gen.emit_dm_value_to_int(first);
+                    let second_i32 = code_gen.emit_dm_value_to_int(second);
 
                     let result_value = code_gen.builder.build_or(second_i32, first_i32, "or");
 
@@ -923,11 +923,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let list_struct = self.stack().pop();
 
                 let index_meta = self.emit_load_meta_value(index_struct);
-
-
-                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
-
-                let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
+                let index_i32 = self.emit_dm_value_to_int(index_meta);
 
                 let list_indexed_get = self.module.get_function("dmir.runtime.list_indexed_get").unwrap();
 
@@ -946,11 +942,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let value_struct = self.stack().pop();
 
                 let index_meta = self.emit_load_meta_value(index_struct);
-
-
-                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
-
-                let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
+                let index_i32 = self.emit_dm_value_to_int(index_meta);
 
                 let list_indexed_set = self.module.get_function("dmir.runtime.list_indexed_set").unwrap();
 
@@ -1487,11 +1479,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let index_struct = self.emit_read_value_location(index);
 
                 let index_meta = self.emit_load_meta_value(index_struct);
-
-
-                let index_f32 = self.builder.build_bitcast(index_meta.data, self.context.f32_type(), "cast_to_float").into_float_value();
-
-                let index_i32 = self.builder.build_float_to_signed_int(index_f32, self.context.i32_type(), "float_to_int");
+                let index_i32 = self.emit_dm_value_to_int(index_meta);
 
                 let list_check_size = self.module.get_function("dmir.runtime.list_check_size").unwrap();
 
