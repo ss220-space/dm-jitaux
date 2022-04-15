@@ -347,6 +347,13 @@ impl<'t> Analyzer<'t> {
                     @produce_uncounted @stack
                 );
             }
+            DMIR::IsSubtypeOf => {
+                op_effect!(
+                    @consume @stack,
+                    @consume @stack,
+                    @produce_uncounted @stack
+                );
+            }
             DMIR::FloatAbs => {
                 op_effect!(
                     @consume @stack,
