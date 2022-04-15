@@ -102,6 +102,7 @@ pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &Executi
     runtime_export!(unset_assoc_list);
     runtime_export!(list_append);
     runtime_export!(list_remove);
+	runtime_export!(create_new_list);
 
 	let target = module.get_global("dmir.runtime.GLOB_LIST_ARRAY").unwrap();
 	execution_engine.add_global_mapping(&target, get_glob_list() as usize);

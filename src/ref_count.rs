@@ -405,6 +405,18 @@ impl<'t> Analyzer<'t> {
                     @move_out @stack
                 );
             }
+            DMIR::NewVectorList(count) => {
+                for _ in 0..count.clone() {
+                    op_effect!(@move_out @stack);
+                }
+                op_effect!(@move_in @stack);
+            }
+            DMIR::NewAssocList(count) => {
+                for _ in 0..(count * 2) {
+                    op_effect!(@consume @stack);
+                }
+                op_effect!(@move_in @stack);
+            }
             DMIR::GetStep => {
                 op_effect!(
                     @consume @stack,

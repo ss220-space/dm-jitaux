@@ -1,7 +1,7 @@
 use std::ptr::null_mut;
 
-use auxtools::raw_types::funcs::{append_to_list, dec_ref_count, remove_from_list};
-use auxtools::raw_types::lists::{AssociativeListEntry, List};
+use auxtools::raw_types::funcs::{append_to_list, create_list, dec_ref_count, remove_from_list};
+use auxtools::raw_types::lists::{AssociativeListEntry, List, ListId};
 use auxtools::raw_types::values::{Value, ValueData, ValueTag};
 use crate::pads::{byond_imports, find_by_call, find_by_reference};
 
@@ -44,7 +44,7 @@ pub fn init() {
 
 pub fn get_glob_list() -> *mut *mut *mut List {
     unsafe {
-        return GLOB_LIST_ARRAY.origin()
+        return GLOB_LIST_ARRAY.origin();
     }
 }
 
@@ -82,6 +82,14 @@ pub fn list_remove(list: Value, value: Value) {
     unsafe {
         remove_from_list(list, value);
     }
+}
+
+pub fn create_new_list(capacity: u32) -> u32 {
+    let mut id = ListId(0);
+    unsafe {
+        create_list(&mut id, capacity);
+    }
+    return id.0;
 }
 
 pub fn list_associative_get(list: Value, index: Value) -> Value {

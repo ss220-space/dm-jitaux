@@ -984,6 +984,70 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         value_struct.into()
                     ], "list_associative_set");
             }
+            DMIR::NewAssocList(count) => {
+                let mut args = vec![];
+                for _ in 0..count * 2 {
+                    args.push(self.stack().pop());
+                }
+
+                let create_new_list = self.module.get_function("dmir.runtime.create_new_list").unwrap();
+
+                let result = self.builder.build_call(
+                    create_new_list,
+                    &[
+                        self.context.i32_type().const_int(0, false).into()
+                    ], "create_new_list").as_any_value_enum().into_int_value();
+
+                let result_meta = MetaValue::with_tag(ValueTag::List, result.into(), self);
+
+                let result = self.emit_store_meta_value(result_meta);
+
+                let list_assoc_append = self.module.get_function("dmir.runtime.list_assoc_append").unwrap();
+
+                for _ in 0..count.clone() {
+                    self.builder.build_call(
+                        list_assoc_append,
+                        &[
+                            result.into(),
+                            args.pop().unwrap().into(),
+                            args.pop().unwrap().into()
+                        ], "list_assoc_append");
+                }
+
+                self.stack().push(result);
+            }
+            DMIR::NewVectorList(count) => {
+                let mut args = vec![];
+                for _ in 0..count.clone() {
+                    args.push(self.stack().pop());
+                }
+
+                let create_new_list = self.module.get_function("dmir.runtime.create_new_list").unwrap();
+
+                let result = self.builder.build_call(
+                    create_new_list,
+                    &[
+                        self.context.i32_type().const_int(count.clone() as u64, false).into()
+                    ], "create_new_list").as_any_value_enum().into_int_value();
+
+                let result_meta = MetaValue::with_tag(ValueTag::List, result.into(), self);
+
+                let result = self.emit_store_meta_value(result_meta);
+
+                let list_indexed_set_internal = self.module.get_function("dmir.runtime.list_indexed_set_internal").unwrap();
+
+                for index in 0..count.clone() {
+                    self.builder.build_call(
+                        list_indexed_set_internal,
+                        &[
+                            result.into(),
+                            self.context.i32_type().const_int(index.clone() as u64, false).into(),
+                            args.pop().unwrap().into()
+                        ], "list_indexed_set_internal");
+                }
+
+                self.stack().push(result);
+            }
             DMIR::GetStep => {
                 let first = self.stack().pop();
                 let second = self.stack().pop();
