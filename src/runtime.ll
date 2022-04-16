@@ -68,17 +68,25 @@ entry:
     %id = extractvalue %DMValue %list_id, 1
     %glob_list = load %List**, %List*** @dmir.runtime.GLOB_LIST_ARRAY, align 4
     %array_element = getelementptr inbounds %List*, %List** %glob_list, i32 %id
-    %ret = load %List*, %List** %array_element, align 4
+    %list_ptr = load %List*, %List** %array_element, align 4
 
-    ret %List* %ret
+    ret %List* %list_ptr
 }
 
-define %DMValue @dmir.runtime.list_indexed_get(%DMValue %list_id, i32 %index) alwaysinline {
+define %DMValue* @dmir.intrinsic.get_list_vector_part(%DMValue %list_id) alwaysinline {
 entry:
     %list_ptr = call %List* @dmir.intrinsic.get_list(%DMValue %list_id)
 
     %vector_part_ptr = getelementptr inbounds %List, %List* %list_ptr, i32 0, i32 0
     %vector_part = load %DMValue*, %DMValue** %vector_part_ptr, align 4
+
+    ret %DMValue* %vector_part
+}
+
+define %DMValue @dmir.intrinsic.list_indexed_get(%DMValue %list_id, i32 %index) alwaysinline {
+entry:
+    %vector_part = call %DMValue* @dmir.intrinsic.get_list_vector_part(%DMValue %list_id)
+
     %index_dec = sub i32 %index, 1
     %array_element = getelementptr inbounds %DMValue, %DMValue* %vector_part, i32 %index_dec
     %ret = load %DMValue, %DMValue* %array_element, align 4
@@ -86,7 +94,7 @@ entry:
     ret %DMValue %ret
 }
 
-define void @dmir.runtime.list_indexed_set(%DMValue %list_id, i32 %index, %DMValue %value) alwaysinline {
+define void @dmir.intrinsic.list_indexed_set(%DMValue %list_id, i32 %index, %DMValue %value) alwaysinline {
 entry:
     %list_ptr = call %List* @dmir.intrinsic.get_list(%DMValue %list_id)
 
@@ -103,12 +111,8 @@ entry:
     ret void
 }
 
-define void @dmir.runtime.list_indexed_set_internal(%DMValue %list_id, i32 %index, %DMValue %value) alwaysinline {
+define void @dmir.intrinsic.list_indexed_set_internal(%DMValue* %vector_part, i32 %index, %DMValue %value) alwaysinline {
 entry:
-    %list_ptr = call %List* @dmir.intrinsic.get_list(%DMValue %list_id)
-
-    %vector_part_ptr = getelementptr inbounds %List, %List* %list_ptr, i32 0, i32 0
-    %vector_part = load %DMValue*, %DMValue** %vector_part_ptr, align 4
     %array_element = getelementptr inbounds %DMValue, %DMValue* %vector_part, i32 %index
     store %DMValue %value, %DMValue* %array_element, align 4
 
@@ -125,7 +129,7 @@ entry:
     ret i32 %len
 }
 
-define i1 @dmir.runtime.list_check_size(%DMValue %list_id, i32 %index) alwaysinline {
+define i1 @dmir.intrinsic.list_check_size(%DMValue %list_id, i32 %index) alwaysinline {
 entry:
     %len = call i32 @dmir.intrinsic.list_size(%DMValue %list_id)
 
@@ -134,30 +138,4 @@ entry:
     %ret = and i1 %gt_zero, %lt_size
 
     ret i1 %ret
-}
-
-define void @dmir.runtime.list_assoc_append(%DMValue %list, %DMValue %index, %DMValue %value) alwaysinline {
-entry:
-    %index_tag = extractvalue %DMValue %index, 0
-
-    %is_not_num = icmp ne i8 %index_tag, 42
-    br i1 %is_not_num, label %assoc, label %num_check
-num_check:
-    %len = call i32 @dmir.intrinsic.list_size(%DMValue %list)
-    %len_inc = add i32 %len, 1
-
-    %index_value = extractvalue %DMValue %index, 1
-    %cast_to_float = bitcast i32 %index_value to float
-    %index_i32 = fptoui float %cast_to_float to i32
-
-    %is_index_valid = icmp eq i32 %len_inc, %index_i32
-    br i1 %is_index_valid, label %append, label %assoc
-assoc:
-    call void @dmir.runtime.list_associative_set(%DMValue %list, %DMValue %index, %DMValue %value)
-    br label %exit
-append:
-    call void @dmir.runtime.list_append(%DMValue %list, %DMValue %value)
-    br label %exit
-exit:
-    ret void
 }

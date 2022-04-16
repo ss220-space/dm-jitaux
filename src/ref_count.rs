@@ -411,7 +411,7 @@ impl<'t> Analyzer<'t> {
                 }
                 op_effect!(@move_in @stack);
             }
-            DMIR::NewAssocList(count) => {
+            DMIR::NewAssocList(count, _) => {
                 for _ in 0..(count * 2) {
                     op_effect!(@consume @stack);
                 }

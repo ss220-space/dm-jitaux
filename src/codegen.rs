@@ -520,7 +520,7 @@ impl<'ctx> CodeGen<'ctx, '_> {
         self.builder.build_call(func, &[value.into()], "call_dec_ref_count");
     }
 
-    fn emit_dm_value_to_int(&self, value: MetaValue<'ctx>) -> IntValue<'ctx> {
+    fn emit_meta_value_to_int(&self, value: MetaValue<'ctx>) -> IntValue<'ctx> {
         let f32 = self.builder.build_bitcast(value.data, self.context.f32_type(), "cast_to_float").into_float_value();
 
         return self.builder.build_float_to_signed_int(f32, self.context.i32_type(), "float_to_int");
@@ -754,8 +754,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::BitAnd => {
                 self.emit_bin_op(|first, second, code_gen| {
-                    let first_i32 = code_gen.emit_dm_value_to_int(first);
-                    let second_i32 = code_gen.emit_dm_value_to_int(second);
+                    let first_i32 = code_gen.emit_meta_value_to_int(first);
+                    let second_i32 = code_gen.emit_meta_value_to_int(second);
 
                     let result_value = code_gen.builder.build_and(second_i32, first_i32, "and");
 
@@ -768,8 +768,8 @@ impl<'ctx> CodeGen<'ctx, '_> {
             }
             DMIR::BitOr => {
                 self.emit_bin_op(|first, second, code_gen| {
-                    let first_i32 = code_gen.emit_dm_value_to_int(first);
-                    let second_i32 = code_gen.emit_dm_value_to_int(second);
+                    let first_i32 = code_gen.emit_meta_value_to_int(first);
+                    let second_i32 = code_gen.emit_meta_value_to_int(second);
 
                     let result_value = code_gen.builder.build_or(second_i32, first_i32, "or");
 
@@ -923,9 +923,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let list_struct = self.stack().pop();
 
                 let index_meta = self.emit_load_meta_value(index_struct);
-                let index_i32 = self.emit_dm_value_to_int(index_meta);
+                let index_i32 = self.emit_meta_value_to_int(index_meta);
 
-                let list_indexed_get = self.module.get_function("dmir.runtime.list_indexed_get").unwrap();
+                let list_indexed_get = self.module.get_function("dmir.intrinsic.list_indexed_get").unwrap();
 
                 let result = self.builder.build_call(
                     list_indexed_get,
@@ -942,9 +942,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let value_struct = self.stack().pop();
 
                 let index_meta = self.emit_load_meta_value(index_struct);
-                let index_i32 = self.emit_dm_value_to_int(index_meta);
+                let index_i32 = self.emit_meta_value_to_int(index_meta);
 
-                let list_indexed_set = self.module.get_function("dmir.runtime.list_indexed_set").unwrap();
+                let list_indexed_set = self.module.get_function("dmir.intrinsic.list_indexed_set").unwrap();
 
                 self.builder.build_call(
                     list_indexed_set,
@@ -984,14 +984,35 @@ impl<'ctx> CodeGen<'ctx, '_> {
                         value_struct.into()
                     ], "list_associative_set");
             }
-            DMIR::NewAssocList(count) => {
+            DMIR::NewAssocList(count, deopt) => {
                 let mut args = vec![];
-                for _ in 0..count * 2 {
+                let mut num_check = self.context.bool_type().const_int(0, false);
+                for _ in 0..count.clone() {
                     args.push(self.stack().pop());
+                    let key = self.stack().pop();
+                    let actual_tag = self.emit_load_meta_value(key).tag;
+                    num_check = self.builder.build_or(num_check, self.emit_tag_predicate_comparison(actual_tag, &ValueTagPredicate::Tag(ValueTag::Number)), "check_for_numbers");
+                    args.push(key);
                 }
 
-                let create_new_list = self.module.get_function("dmir.runtime.create_new_list").unwrap();
+                let next_block = self.context.append_basic_block(func, "next");
+                let deopt_block = self.context.append_basic_block(func, "deopt");
 
+                self.builder.build_conditional_branch(
+                    num_check,
+                    deopt_block,
+                    next_block
+                );
+
+                self.builder.position_at_end(deopt_block);
+                if cfg!(debug_deopt_print) {
+                    self.dbg(format!("NewAssocListKeyCheck({:?}, {:?}) failed: ", count, deopt).as_str());
+                }
+                self.emit(deopt.borrow(), func);
+                self.builder.build_unconditional_branch(next_block);
+                self.builder.position_at_end(next_block);
+
+                let create_new_list = self.module.get_function("dmir.runtime.create_new_list").unwrap();
                 let result = self.builder.build_call(
                     create_new_list,
                     &[
@@ -999,19 +1020,17 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     ], "create_new_list").as_any_value_enum().into_int_value();
 
                 let result_meta = MetaValue::with_tag(ValueTag::List, result.into(), self);
-
                 let result = self.emit_store_meta_value(result_meta);
 
-                let list_assoc_append = self.module.get_function("dmir.runtime.list_assoc_append").unwrap();
-
+                let list_associative_set = self.module.get_function("dmir.runtime.list_associative_set").unwrap();
                 for _ in 0..count.clone() {
                     self.builder.build_call(
-                        list_assoc_append,
+                        list_associative_set,
                         &[
                             result.into(),
                             args.pop().unwrap().into(),
                             args.pop().unwrap().into()
-                        ], "list_assoc_append");
+                        ], "list_associative_set");
                 }
 
                 self.stack().push(result);
@@ -1023,7 +1042,6 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 }
 
                 let create_new_list = self.module.get_function("dmir.runtime.create_new_list").unwrap();
-
                 let result = self.builder.build_call(
                     create_new_list,
                     &[
@@ -1031,16 +1049,21 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     ], "create_new_list").as_any_value_enum().into_int_value();
 
                 let result_meta = MetaValue::with_tag(ValueTag::List, result.into(), self);
-
                 let result = self.emit_store_meta_value(result_meta);
 
-                let list_indexed_set_internal = self.module.get_function("dmir.runtime.list_indexed_set_internal").unwrap();
+                let get_list_vector_part = self.module.get_function("dmir.intrinsic.get_list_vector_part").unwrap();
+                let vector_part = self.builder.build_call(
+                    get_list_vector_part,
+                    &[
+                        result.into()
+                    ], "get_list_vector_part").as_any_value_enum().into_pointer_value();
 
+                let list_indexed_set_internal = self.module.get_function("dmir.intrinsic.list_indexed_set_internal").unwrap();
                 for index in 0..count.clone() {
                     self.builder.build_call(
                         list_indexed_set_internal,
                         &[
-                            result.into(),
+                            vector_part.into(),
                             self.context.i32_type().const_int(index.clone() as u64, false).into(),
                             args.pop().unwrap().into()
                         ], "list_indexed_set_internal");
@@ -1543,9 +1566,9 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 let index_struct = self.emit_read_value_location(index);
 
                 let index_meta = self.emit_load_meta_value(index_struct);
-                let index_i32 = self.emit_dm_value_to_int(index_meta);
+                let index_i32 = self.emit_meta_value_to_int(index_meta);
 
-                let list_check_size = self.module.get_function("dmir.runtime.list_check_size").unwrap();
+                let list_check_size = self.module.get_function("dmir.intrinsic.list_check_size").unwrap();
 
                 let result = self.builder.build_call(
                     list_check_size,
