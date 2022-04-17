@@ -102,7 +102,7 @@ pub enum ValueLocation {
 }
 
 macro_rules! type_switch {
-    (@switch_counter $s:ident, @stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
+    (@switch_counter $s:expr, @stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
         let cases = vec![
             $((value_tag_pred!($($check)+), $body)),+
         ];
@@ -231,13 +231,6 @@ fn build_float_bin_op_deopt(action: DMIR, data: &DebugData, proc: &Proc, out: &m
     out.push(action);
 }
 
-fn decode_aug_instruction(var: &Variable, action: &mut Vec<DMIR>, out: &mut Vec<DMIR>) {
-    decode_get_var(var, out);
-    out.push(DMIR::Swap);
-    out.append(action);
-    decode_set_var(var, out);
-}
-
 fn decode_switch(value: ValueLocation, switch_id: &mut u32, cases: Vec<(ValueTagPredicate, Vec<DMIR>)>, out: &mut Vec<DMIR>) {
     let switch_exit = format!("switch_{}_exit", switch_id);
     let (predicates, blocks): (Vec<_>, Vec<_>) = cases.into_iter().unzip();
@@ -259,89 +252,6 @@ fn decode_switch(value: ValueLocation, switch_id: &mut u32, cases: Vec<(ValueTag
     *switch_id += 1;
 }
 
-fn decode_binary_instruction(insn: Instruction, data: &DebugData, proc: &Proc, switch_counter: &mut u32, out: &mut Vec<DMIR>) {
-    macro_rules! deopt {
-        () => ( vec![DMIR::Deopt(data.offset, vec![]), DMIR::End] );
-    }
-    match insn {
-        Instruction::Add => {
-            out.append(&mut type_switch!(
-                    @switch_counter switch_counter,
-                    @stack 1,
-                    (ValueTag::Number) => type_switch!(
-                        @switch_counter switch_counter,
-                        @stack 0,
-                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatAdd],
-                        (@any) => deopt!()
-                    ),
-                    (ValueTag::List) => type_switch!(
-                        @switch_counter switch_counter,
-                        @stack 0,
-                        (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
-                            vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListAddSingle],
-                        (@any) => deopt!()
-                    ),
-                    (@any) => deopt!()
-                )
-            );
-        }
-        Instruction::Sub => {
-            out.append(&mut type_switch!(
-                    @switch_counter switch_counter,
-                    @stack 1,
-                    (ValueTag::Number) => type_switch!(
-                        @switch_counter switch_counter,
-                        @stack 0,
-                        (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatSub],
-                        (@any) => deopt!()
-                    ),
-                    (ValueTag::List) => type_switch!(
-                        @switch_counter switch_counter,
-                        @stack 0,
-                        (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
-                            vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListSubSingle],
-                        (@any) => deopt!()
-                    ),
-                    (@any) => deopt!()
-                )
-            );
-        }
-        Instruction::Band => {
-            out.append(&mut type_switch!(
-                    @switch_counter switch_counter,
-                    @stack 1,
-                    (ValueTag::Null) => vec![DMIR::Pop, DMIR::Pop, DMIR::PushInt(0)],
-                    (ValueTag::Number) => type_switch!(
-                        @switch_counter switch_counter,
-                        @stack 0,
-                        (ValueTag::Null) => vec![DMIR::Pop, DMIR::Pop, DMIR::PushInt(0)],
-                        (ValueTag::Number) => vec![DMIR::BitAnd],
-                        (@any) => deopt!()
-                    ),
-                    (@any) => deopt!()
-                )
-            );
-        }
-        Instruction::Bor => {
-            out.append(&mut type_switch!(
-                    @switch_counter switch_counter,
-                    @stack 1,
-                    (ValueTag::Null) => vec![DMIR::Swap, DMIR::Pop],
-                    (ValueTag::Number) => type_switch!(
-                        @switch_counter switch_counter,
-                        @stack 0,
-                        (ValueTag::Null) => vec![DMIR::Pop],
-                        (ValueTag::Number) => vec![DMIR::BitOr],
-                        (@any) => deopt!()
-                    ),
-                    (@any) => deopt!()
-                )
-            );
-        }
-        _ => {}
-    }
-}
-
 pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<Vec<DMIR>, ()> {
     // output for intermediate operations sequence
     let mut irs = vec![];
@@ -356,8 +266,7 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
 
     macro_rules! build_type_switch {
         (@stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
-            let s = &mut switch_counter;
-            type_switch!(@switch_counter s, @stack $n, $(($($check)+) => $body),+)
+            type_switch!(@switch_counter &mut switch_counter, @stack $n, $(($($check)+) => $body),+)
         });
     }
 
@@ -380,8 +289,69 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                     Instruction::SetVar(vr) => {
                         decode_set_var(&vr, &mut irs)
                     }
-                    Instruction::Add | Instruction::Sub | Instruction::Band | Instruction::Bor => {
-                        decode_binary_instruction(insn, &data, &proc, &mut switch_counter, &mut irs)
+                    Instruction::Add => {
+                        irs.append(&mut build_type_switch!(
+                                @stack 1,
+                                (ValueTag::Number) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatAdd],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (ValueTag::List) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
+                                        vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListAddSingle],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
+                    }
+                    Instruction::Sub => {
+                        irs.append(&mut build_type_switch!(
+                                @stack 1,
+                                (ValueTag::Number) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null) => vec![DMIR::FloatSub],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (ValueTag::List) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
+                                        vec![DMIR::Swap, DMIR::ListCopy, DMIR::DupX1, DMIR::Swap, DMIR::ListSubSingle],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
+                    }
+                    Instruction::Band => {
+                        irs.append(&mut build_type_switch!(
+                                @stack 1,
+                                (ValueTag::Null) => vec![DMIR::Pop, DMIR::Pop, DMIR::PushInt(0)],
+                                (ValueTag::Number) => build_type_switch!(
+                                    @stack 0,
+                                    (ValueTag::Null) => vec![DMIR::Pop, DMIR::Pop, DMIR::PushInt(0)],
+                                    (ValueTag::Number) => vec![DMIR::BitAnd],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
+                    }
+                    Instruction::Bor => {
+                        irs.append(&mut build_type_switch!(
+                                @stack 1,
+                                (ValueTag::Null) => vec![DMIR::Swap, DMIR::Pop],
+                                (ValueTag::Number) => build_type_switch!(
+                                    @stack 0,
+                                    (ValueTag::Null) => vec![DMIR::Pop],
+                                    (ValueTag::Number) => vec![DMIR::BitOr],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
                     }
                     Instruction::Mul => {
                         irs.push(CheckTypeDeopt(
@@ -536,14 +506,48 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::Pop)
                     }
                     Instruction::AugAdd(var) => {
-                        let mut block = Vec::new();
-                        decode_binary_instruction(Instruction::Add, &data, &proc, &mut switch_counter, &mut block);
-                        decode_aug_instruction(&var, &mut block, &mut irs)
+                        decode_get_var(&var, &mut irs);
+                        irs.push(DMIR::Swap);
+                        let mut number_branch = vec![DMIR::FloatAdd];
+                        decode_set_var(&var, &mut number_branch);
+                        irs.append(&mut build_type_switch!(
+                                @stack 1,
+                                (ValueTag::Number) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null) => number_branch,
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (ValueTag::List) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
+                                        vec![DMIR::ListAddSingle],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
                     }
                     Instruction::AugSub(var) => {
-                        let mut block = Vec::new();
-                        decode_binary_instruction(Instruction::Sub, &data, &proc, &mut switch_counter, &mut block);
-                        decode_aug_instruction(&var, &mut block, &mut irs)
+                        decode_get_var(&var, &mut irs);
+                        irs.push(DMIR::Swap);
+                        let mut number_branch = vec![DMIR::FloatSub];
+                        decode_set_var(&var, &mut number_branch);
+                        irs.append(&mut build_type_switch!(
+                                @stack 1,
+                                (ValueTag::Number) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null) => number_branch,
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (ValueTag::List) => build_type_switch!(
+                                    @stack 0,
+                                    (@union ValueTag::Number, ValueTag::Null, ValueTag::Datum, ValueTag::Turf, ValueTag::Obj, ValueTag::Mob, ValueTag::Area, ValueTag::Client, ValueTag::String) =>
+                                        vec![DMIR::ListSubSingle],
+                                    (@any) => deopt!(@type_switch)
+                                ),
+                                (@any) => deopt!(@type_switch)
+                            )
+                        );
                     }
                     Instruction::Inc(var) => {
                         decode_get_var(&var, &mut irs);
