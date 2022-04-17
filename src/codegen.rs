@@ -985,14 +985,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
                     ], "list_associative_set");
             }
             DMIR::NewAssocList(count, deopt) => {
-                let mut args = vec![];
                 let mut num_check = self.context.bool_type().const_int(0, false);
-                for _ in 0..count.clone() {
-                    args.push(self.stack().pop());
-                    let key = self.stack().pop();
+                for i in 0..count.clone() {
+                    let key = self.stack_loc[self.stack_loc.len() - 2 - (i as usize)];
                     let actual_tag = self.emit_load_meta_value(key).tag;
                     num_check = self.builder.build_or(num_check, self.emit_tag_predicate_comparison(actual_tag, &ValueTagPredicate::Tag(ValueTag::Number)), "check_for_numbers");
-                    args.push(key);
                 }
 
                 let next_block = self.context.append_basic_block(func, "next");
@@ -1011,6 +1008,11 @@ impl<'ctx> CodeGen<'ctx, '_> {
                 self.emit(deopt.borrow(), func);
                 self.builder.build_unconditional_branch(next_block);
                 self.builder.position_at_end(next_block);
+
+                let mut args = vec![];
+                for _ in 0..count.clone() * 2 {
+                    args.push(self.stack().pop());
+                }
 
                 let create_new_list = self.module.get_function("dmir.runtime.create_new_list").unwrap();
                 let result = self.builder.build_call(
