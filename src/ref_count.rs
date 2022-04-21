@@ -415,7 +415,8 @@ impl<'t> Analyzer<'t> {
                 let old_block_ended = self.block_ended;
                 self.analyze_instruction(pos, deopt.borrow());
                 self.block_ended = old_block_ended;
-                for _ in 0..(count * 2) {
+                for _ in 0..count.clone() {
+                    op_effect!(@move_out @stack);
                     op_effect!(@consume @stack);
                 }
                 op_effect!(@move_in @stack);
