@@ -1,12 +1,12 @@
 use std::ptr::null_mut;
 
-use auxtools::raw_types::funcs::{append_to_list, dec_ref_count, remove_from_list};
-use auxtools::raw_types::lists::{AssociativeListEntry, List};
+use auxtools::raw_types::funcs::{append_to_list, create_list, dec_ref_count, remove_from_list};
+use auxtools::raw_types::lists::{AssociativeListEntry, List, ListId};
 use auxtools::raw_types::values::{Value, ValueData, ValueTag};
 use crate::pads::{byond_imports, find_by_call, find_by_reference};
 
 byond_imports!(
-    var GLOB_LIST_ARRAY_PTR: *mut *mut List
+    var GLOB_LIST_ARRAY: *mut *mut List
         = find_by_reference!(
             unix    => "8b 15 >?? ?? ?? ?? 8b 14 82 85 d2 74 a7 83 42 10 01 8b 83 f4 00 00 00",
             windows => "8b 35 >?? ?? ?? ?? 8b 45 10 90 80 f9 06 0f 84 04 03 00 00 80"
@@ -42,13 +42,21 @@ pub fn init() {
     init_byond_imports();
 }
 
-pub unsafe fn unset_assoc_list(list: *mut List, value: Value) {
-    UNSET_ASSOC_LIST_PTR(&mut (*list).assoc_part, value)
+pub fn get_glob_list() -> *mut *mut *mut List {
+    unsafe {
+        return GLOB_LIST_ARRAY.origin();
+    }
+}
+
+pub fn unset_assoc_list(assoc_part: *mut *mut AssociativeListEntry, value: Value) {
+    unsafe {
+        UNSET_ASSOC_LIST_PTR(assoc_part, value)
+    }
 }
 
 pub fn get_list(list: Value) -> *mut List {
     unsafe {
-        return *(GLOB_LIST_ARRAY_PTR.add(list.data.list.0 as usize));
+        return *(GLOB_LIST_ARRAY.add(list.data.list.0 as usize));
     }
 }
 
@@ -76,29 +84,12 @@ pub fn list_remove(list: Value, value: Value) {
     }
 }
 
-pub fn list_check_size(list: Value, index: i32) -> bool {
+pub fn create_new_list(capacity: u32) -> u32 {
+    let mut id = ListId(0);
     unsafe {
-        let list = get_list(list);
-        return index > 0 && index as u32 <= (*list).length;
+        create_list(&mut id, capacity);
     }
-}
-
-
-pub fn list_indexed_get(list: Value, index: i32) -> Value {
-    unsafe {
-        let list = get_list(list);
-        return *(*list).vector_part.offset((index - 1) as isize);
-    }
-}
-
-pub fn list_indexed_set(list: Value, index: i32, value: Value) {
-    unsafe {
-        let list = get_list(list);
-        let value_ptr = (*list).vector_part.offset((index - 1) as isize);
-        unset_assoc_list(list, *value_ptr);
-        dec_ref_count(*value_ptr);
-        *(value_ptr) = value;
-    }
+    return id.0;
 }
 
 pub fn list_associative_get(list: Value, index: Value) -> Value {

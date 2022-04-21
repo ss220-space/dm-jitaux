@@ -53,6 +53,7 @@ impl<T> DynamicBoundVariable<T> {
     pub(crate) fn init(&self) {
         Lazy::force(&self.0);
     }
+    pub(crate) fn origin(&self) -> *mut T { *self.0 }
 }
 
 pub(crate) struct DynamicBoundFunction<T: Sized>(Lazy<T>);

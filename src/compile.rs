@@ -263,7 +263,8 @@ fn compile_proc<'ctx>(
             DMIR::DecRefCount { target: _, op } |
             DMIR::InfLoopCheckDeopt(op) |
             DMIR::ListCheckSizeDeopt(_, _, op) |
-            DMIR::CheckTypeDeopt(_, _, op) => {
+            DMIR::CheckTypeDeopt(_, _, op) |
+            DMIR::NewAssocList(_, op) => {
                 compute_max_sub_call_arg_count(op, max_sub_call_arg_count);
             }
             _ => {}

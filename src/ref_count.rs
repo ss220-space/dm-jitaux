@@ -405,6 +405,22 @@ impl<'t> Analyzer<'t> {
                     @move_out @stack
                 );
             }
+            DMIR::NewVectorList(count) => {
+                for _ in 0..count.clone() {
+                    op_effect!(@move_out @stack);
+                }
+                op_effect!(@move_in @stack);
+            }
+            DMIR::NewAssocList(count, deopt) => {
+                let old_block_ended = self.block_ended;
+                self.analyze_instruction(pos, deopt.borrow());
+                self.block_ended = old_block_ended;
+                for _ in 0..count.clone() {
+                    op_effect!(@move_out @stack);
+                    op_effect!(@consume @stack);
+                }
+                op_effect!(@move_in @stack);
+            }
             DMIR::GetStep => {
                 op_effect!(
                     @consume @stack,
@@ -818,7 +834,7 @@ pub fn generate_ref_count_operations(ir: &mut Vec<DMIR>, parameter_count: usize)
 
                 let instruction = ir.get_mut(pos.clone()).unwrap();
                 match instruction {
-                    DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) | DMIR::InfLoopCheckDeopt(deopt)  => {
+                    DMIR::CheckTypeDeopt(_, _, deopt) | DMIR::ListCheckSizeDeopt(_, _, deopt) | DMIR::InfLoopCheckDeopt(deopt) | DMIR::NewAssocList(_, deopt)  => {
                         match deopt.borrow_mut() {
                             DMIR::Deopt(_, inc_ref_count_locations) => inc_ref_count_locations.push(location),
                             _ => panic!("not matching instruction type")

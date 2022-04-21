@@ -93,17 +93,19 @@ pub(crate) fn bind_runtime_externals(module: &Module, execution_engine: &Executi
 
     use dm_types::*;
     runtime_export!(is_dm_entity);
-	runtime_export!(is_subtype_of);
+    runtime_export!(is_subtype_of);
 
     use lists::*;
-    runtime_export!(list_indexed_get);
-    runtime_export!(list_indexed_set);
     runtime_export!(list_associative_get);
     runtime_export!(list_associative_set);
     runtime_export!(list_copy);
-    runtime_export!(list_check_size);
+    runtime_export!(unset_assoc_list);
     runtime_export!(list_append);
     runtime_export!(list_remove);
+    runtime_export!(create_new_list);
+
+    let target = module.get_global("dmir.runtime.GLOB_LIST_ARRAY").unwrap();
+    execution_engine.add_global_mapping(&target, get_glob_list() as usize);
 
     use turfs::*;
     runtime_export!(get_step);

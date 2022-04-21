@@ -42,6 +42,8 @@ pub enum DMIR {
     ListIndexedSet,
     ListAssociativeGet,
     ListAssociativeSet,
+    NewVectorList(u32),
+    NewAssocList(u32, Box<DMIR>),
     GetStep,
     PushInt(i32),
     PushVal(dmasm::operands::ValueOpRaw),
@@ -417,6 +419,12 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                                 (@any) => vec![DMIR::ListAssociativeSet]
                             )
                         );
+                    }
+                    Instruction::NewList(count) => {
+                        irs.push(DMIR::NewVectorList(count));
+                    }
+                    Instruction::NewAssocList(count) => {
+                        irs.push(DMIR::NewAssocList(count, deopt!()));
                     }
                     Instruction::GetStep => {
                         irs.push(DMIR::GetStep);

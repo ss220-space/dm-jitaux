@@ -29,7 +29,7 @@ pub fn test(l: auxtools::Value) {
         log::debug!("List ID {} {:?}", l.raw.data.list.0, (*list));
         log::debug!("Vector part");
         for i in 0..(*list).length {
-            log::debug!("{:?}", pads::lists::list_indexed_get(l.clone().raw, (i+1) as i32));
+            log::debug!("{:?}", *(*list).vector_part.add(i as usize));
         }
         log::debug!("Assoc part");
         fn debug_assoc_part(entry: *mut AssociativeListEntry) -> String {
