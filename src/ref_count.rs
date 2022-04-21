@@ -509,6 +509,13 @@ impl<'t> Analyzer<'t> {
                 }
                 op_effect!(@move_in @stack);
             }
+            DMIR::NewDatum(location) => {
+                let stack_pos = self.stack.len() - 1 - *location as usize;
+                let location_read = ValueLocation::Stack(*location as u8);
+                self.drains.push(RValueDrain::ConsumeDrain(pos, self.stack[stack_pos], DecRefOp::DupPost(location_read)));
+                self.stack[stack_pos] = mk_value!(self, RValue::MovedInSource(pos));
+                op_effect!(@produce @stack);
+            }
             DMIR::End => {
                 unset_locals_and_cache!();
                 self.block_ended = true;

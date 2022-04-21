@@ -28,6 +28,7 @@ declare external i32      @dmir.runtime.create_new_list(i32)
 
 declare external i1       @dmir.runtime.is_dm_entity(%DMValue)
 declare external i1       @dmir.runtime.is_subtype_of(%DMValue, %DMValue)
+declare external i32      @dmir.runtime.create_datum(%DMValue, i32, i32)
 
 declare external %DMValue @dmir.runtime.get_step(%DMValue, i8)
 

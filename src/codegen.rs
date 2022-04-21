@@ -1244,6 +1244,26 @@ impl<'ctx> CodeGen<'ctx, '_> {
 
                 self.stack().push(out_value);
             }
+            DMIR::NewDatum(location) => {
+                let stack_pos = self.stack_loc.len() - 1 - *location as usize;
+                let t = self.stack_loc[stack_pos];
+                let type_meta = self.emit_load_meta_value(t);
+
+                let usr = func.get_nth_param(2).unwrap().into_struct_value();
+
+                let create_datum = self.module.get_function("dmir.runtime.create_datum").unwrap();
+                let result = self.builder.build_call(
+                    create_datum,
+                    &[
+                        usr.into(),
+                        type_meta.data.into(),
+                        self.context.i32_type().const_int(0xFFFF as u64, false).into()
+                    ], "create_datum").as_any_value_enum().into_int_value();
+                let result_meta = MetaValue::with_tag(ValueTag::Datum, result.into(), self);
+                let r = self.emit_store_meta_value(result_meta);
+                self.stack_loc[stack_pos] = r;
+                self.stack().push(r);
+            }
             DMIR::PushInt(val) => {
                 // val is int, so convert it to float as all values in byond are floats, then bit-cast to store it within DMValue
                 let value = self.builder.build_bitcast(
