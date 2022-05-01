@@ -193,13 +193,13 @@ fn provide_env(cmd: &mut Command) {
 }
 
 fn cmd_dm() -> Command {
-    if cfg!(target_os = "windows") {
+    let mut cmd = if cfg!(target_os = "windows") {
         Command::new(format!("{}\\bin\\dm.exe", byond_path()))
     } else {
-        let mut cmd = Command::new(format!("{}/bin/DreamMaker", byond_path()));
-        provide_env(&mut cmd);
-        cmd
-    }
+        Command::new(format!("{}/bin/DreamMaker", byond_path()))
+    };
+    provide_env(&mut cmd);
+    return cmd;
 }
 
 fn byond_path() -> String {
@@ -212,11 +212,11 @@ fn byond_path() -> String {
 }
 
 fn cmd_dreamdaemon() -> Command {
-    if cfg!(target_os = "windows") {
+    let mut cmd = if cfg!(target_os = "windows") {
         Command::new(format!("{}\\bin\\dreamdaemon.exe", byond_path()))
     } else {
-        let mut cmd = Command::new(format!("{}/bin/DreamDaemon", byond_path()));
-        provide_env(&mut cmd);
-        cmd
-    }
+        Command::new(format!("{}/bin/DreamDaemon", byond_path()))
+    };
+    provide_env(&mut cmd);
+    return cmd;
 }
