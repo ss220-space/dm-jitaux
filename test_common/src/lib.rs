@@ -183,21 +183,23 @@ fn lib_path() -> &'static Path {
     }
 }
 
-#[cfg(unix)]
 fn provide_env(cmd: &mut Command) {
-    let library_path = std::env::var("LD_LIBRARY_PATH").unwrap_or("".to_owned());
-    cmd.env("LD_LIBRARY_PATH", format!("{}/bin:{}", byond_path(), library_path));
-    cmd.env("BYOND_SYSTEM", byond_path());
+    #[cfg(unix)]
+    {
+        let library_path = std::env::var("LD_LIBRARY_PATH").unwrap_or("".to_owned());
+        cmd.env("LD_LIBRARY_PATH", format!("{}/bin:{}", byond_path(), library_path));
+        cmd.env("BYOND_SYSTEM", byond_path());
+    }
 }
 
 fn cmd_dm() -> Command {
-    if cfg!(target_os = "windows") {
+    let mut cmd = if cfg!(target_os = "windows") {
         Command::new(format!("{}\\bin\\dm.exe", byond_path()))
     } else {
-        let mut cmd = Command::new(format!("{}/bin/DreamMaker", byond_path()));
-        provide_env(&mut cmd);
-        cmd
-    }
+        Command::new(format!("{}/bin/DreamMaker", byond_path()))
+    };
+    provide_env(&mut cmd);
+    return cmd;
 }
 
 fn byond_path() -> String {
@@ -210,11 +212,11 @@ fn byond_path() -> String {
 }
 
 fn cmd_dreamdaemon() -> Command {
-    if cfg!(target_os = "windows") {
+    let mut cmd = if cfg!(target_os = "windows") {
         Command::new(format!("{}\\bin\\dreamdaemon.exe", byond_path()))
     } else {
-        let mut cmd = Command::new(format!("{}/bin/DreamDaemon", byond_path()));
-        provide_env(&mut cmd);
-        cmd
-    }
+        Command::new(format!("{}/bin/DreamDaemon", byond_path()))
+    };
+    provide_env(&mut cmd);
+    return cmd;
 }
