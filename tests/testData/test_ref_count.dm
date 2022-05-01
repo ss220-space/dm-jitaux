@@ -137,6 +137,3 @@
 
 /proc/excess_args(a)
     return a
-
-// Intrinsic to emulate deopt
-/proc/dm_jitaux_deopt()

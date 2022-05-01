@@ -48,3 +48,5 @@ test_dm!(test_list_new);
 test_dm!(test_loops);
 test_dm!(test_inc_dec);
 test_dm!(test_step + "test_step.dmm");
+test_dm!(test_iterator);
+test_dm!(test_turf_iterator + "test_turf_iterator.dmm");

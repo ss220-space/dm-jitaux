@@ -123,12 +123,20 @@ impl ProcMetaBuilder {
         }
     }
 
-    pub fn add_deopt_point(&mut self, bytecode_offset: u32, inc_ref_count_locations: &Vec<ValueLocation>) -> DeoptId {
+    pub fn add_deopt_point(
+        &mut self,
+        bytecode_offset: u32,
+        inc_ref_count_locations: &Vec<ValueLocation>,
+        has_active_iterator: bool,
+        iterator_stack_size: u32
+    ) -> DeoptId {
         let deopt_id = DeoptId::new(self.mid.clone(), self.deopt_points.len() as u32);
         self.deopt_points.push(
             DeoptPointOrigin {
                 bytecode_offset,
                 inc_ref_count_locations: inc_ref_count_locations.clone().into_boxed_slice(),
+                has_active_iterator,
+                iterator_stack_size
             }
         );
         return deopt_id;
