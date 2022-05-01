@@ -7,8 +7,8 @@
     for(var/i in 1 to 1000)
         data[i] = i
 
-    RES(num2text(iter_list(data), 10)) // RES: 500504160
-    RES(num2text(iter_list_deopt(data), 10)) // RES: 500504160
+    RES(num2text(iter_list(data), 10)) // RES: "500504160"
+    RES(num2text(iter_list_deopt(data), 10)) // RES: "500504160"
 
 /datum/some
     var/s = 1
