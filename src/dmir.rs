@@ -78,6 +78,7 @@ pub enum DMIR {
     CheckTypeDeopt(u32, ValueTagPredicate, Box<DMIR>), // Doesn't consume stack value for now
     CallProcById(ProcId, u8, u32),
     CallProcByName(StringId, u8, u32),
+    NewDatum(u32),
     IncRefCount { target: RefOpDisposition, op: Box<DMIR> },
     DecRefCount { target: RefOpDisposition, op: Box<DMIR> },
     Nop,
@@ -110,7 +111,7 @@ pub enum ValueLocation {
 }
 
 macro_rules! type_switch {
-    (@switch_counter $s:expr, @stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
+    (@switch_counter $s:expr, @stack $n:expr, $(($($check:tt)+) => $body:expr),+) => ({
         let cases = vec![
             $((value_tag_pred!($($check)+), $body)),+
         ];
@@ -273,7 +274,7 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
     let mut switch_counter = 0;
 
     macro_rules! build_type_switch {
-        (@stack $n:literal, $(($($check:tt)+) => $body:expr),+) => ({
+        (@stack $n:expr, $(($($check:tt)+) => $body:expr),+) => ({
             type_switch!(@switch_counter &mut switch_counter, @stack $n, $(($($check)+) => $body),+)
         });
     }
@@ -724,6 +725,13 @@ pub fn decode_byond_bytecode(nodes: Vec<Node<DebugData>>, proc: Proc) -> Result<
                         irs.push(DMIR::FloatAdd); // c b (a+c)
                         irs.push(DMIR::Swap); // c (a+c) b
                         irs.push(DMIR::SwapX1); // (a+c) b c
+                    }
+                    Instruction::New(arg_count) => {
+                        irs.append(&mut build_type_switch!(
+                            @stack arg_count as u8,
+                            (ValueTag::DatumTypepath) => vec![DMIR::NewDatum(arg_count), DMIR::CallProcByName(StringId(3), 6, arg_count), DMIR::Pop],
+                            (@any) => deopt!(@type_switch)
+                        ));
                     }
                     Instruction::IterLoad(kind, bitmask) => {
                         irs.push(DMIR::IterAllocate);
