@@ -38,6 +38,8 @@ macro_rules! ref_identity {
     };
 }
 
+pub(crate) use ref_identity;
+
 ref_identity!(RValue<'_>);
 
 /// Denotes value drains
