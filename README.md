@@ -2,7 +2,7 @@
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)
 # .dmJIT
 
-.dmJIT is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools), [dmasm](https://github.com/ss220-space/dmasm) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactroing your DM code).
+.dmJIT is a Rust-based JIT compiler using modified [auxtools](https://github.com/ss220-space/auxtools), [dmasm](https://github.com/ss220-space/dmasm) and [Inkwell](https://github.com/TheDan64/inkwell) LLVM wrapper for boosting [Byond DM](http://www.byond.com) performance without any hassle (such as rewriting/refactoring your DM code).
 
 ## Implementation status
 #### Roadmap
