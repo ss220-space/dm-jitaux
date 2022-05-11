@@ -446,6 +446,13 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                 }
                 mk_var!(stack_top!() => In);
             }
+            DMIR::NewDatum(arg_count) => {
+                let arg_count = *arg_count as usize;
+                let pos = state.stack.len() - 1 - arg_count;
+                out!(state.stack[pos]);
+                mk_var!(stack_top!(arg_count) => In);
+                mk_var!(stack_top!() => Variable(state.stack[pos]));
+            }
             DMIR::IncRefCount { .. } => {} // todo
             DMIR::DecRefCount { .. } => {} // todo
             DMIR::Nop => {}
