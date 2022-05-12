@@ -26,7 +26,7 @@ impl InterpreterState<'_> {
     }
 }
 
-enum FlowVariableExpression<'t> {
+pub enum FlowVariableExpression<'t> {
     /// Re-assign of different variable
     Variable(&'t FlowVariable<'t>),
     /// Merge of different variables in SSA
@@ -35,9 +35,9 @@ enum FlowVariableExpression<'t> {
     In,
 }
 
-struct FlowVariable<'t> {
-    location: ValueLocation,
-    expression: FlowVariableExpression<'t>,
+pub struct FlowVariable<'t> {
+    pub location: ValueLocation,
+    pub expression: FlowVariableExpression<'t>,
 }
 
 use std::hash::{Hash, Hasher};
@@ -47,16 +47,16 @@ use crate::dmir_annotate::Annotator;
 use crate::ref_count::ref_identity;
 ref_identity!(FlowVariable<'_>);
 
-enum FlowVariableConsume<'t> {
+pub enum FlowVariableConsume<'t> {
     /// Consume without using variable
     Unset(&'t FlowVariable<'t>),
     /// Generic opaque write, for example write to global variable
     Out(&'t FlowVariable<'t>),
 }
 
-struct OperationEffect<'t> {
-    variables: Vec<&'t FlowVariable<'t>>,
-    consumes: Vec<FlowVariableConsume<'t>>,
+pub struct OperationEffect<'t> {
+    pub variables: Vec<&'t FlowVariable<'t>>,
+    pub consumes: Vec<FlowVariableConsume<'t>>,
 }
 
 struct DataFlowAnalyzer<'t, 'graph> {
