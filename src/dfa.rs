@@ -65,6 +65,7 @@ pub enum FlowVariableConsume<'t> {
 pub struct OperationEffect<'t> {
     pub variables: Vec<&'t FlowVariable<'t>>,
     pub consumes: Vec<FlowVariableConsume<'t>>,
+    pub stack_size: usize
 }
 
 struct DataFlowAnalyzer<'t, 'graph> {
@@ -118,7 +119,8 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         }
         result.push(OperationEffect {
             variables: state.arguments.clone(),
-            consumes: vec![]
+            consumes: vec![],
+            stack_size: 0
         });
 
         for instruction in instructions {
@@ -198,7 +200,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         blocks: &'q mut HashMap<String, InterpreterState<'t>>,
         instruction: &'q DMIR
     ) -> OperationEffect<'t> {
-        let mut effect = OperationEffect { variables: vec![], consumes: vec![] };
+        let mut effect = OperationEffect { variables: vec![], consumes: vec![], stack_size: 0 };
 
         macro_rules! mk_var {
             ($loc:expr => $expr:expr) => {
@@ -470,6 +472,8 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                 Self::epilogue_effect(state, &mut effect);
             }
         }
+
+        effect.stack_size = state.stack.len();
         effect
     }
 }
