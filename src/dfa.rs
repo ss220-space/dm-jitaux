@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use typed_arena::Arena;
-use crate::dmir::{DMIR, ValueLocation};
-use ValueLocation::*;
+use crate::dmir::{DMIR};
+use DFValueLocation::*;
 use FlowVariableExpression::*;
 
 /// This module provides data-flow analysis capability
@@ -13,6 +13,14 @@ struct InterpreterState<'t> {
     stack: Vec<&'t FlowVariable<'t>>,
     locals: HashMap<u32, &'t FlowVariable<'t>>,
     cache: Option<&'t FlowVariable<'t>>,
+}
+
+#[derive(Clone, Debug)]
+pub enum DFValueLocation {
+    Local(u32),
+    Cache,
+    Argument(u32),
+    Stack(u8)
 }
 
 impl InterpreterState<'_> {
@@ -36,7 +44,7 @@ pub enum FlowVariableExpression<'t> {
 }
 
 pub struct FlowVariable<'t> {
-    pub location: ValueLocation,
+    pub location: DFValueLocation,
     pub expression: FlowVariableExpression<'t>,
 }
 
@@ -82,7 +90,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                 }
             }
             Cache => {
-                state.cache = Option::Some(variable);
+                state.cache = Some(variable);
             }
             Local(idx) => {
                 assert!(state.locals.insert(*idx, variable).is_none());
@@ -102,8 +110,8 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
             state.arguments.push(
                 self.arena.alloc(
                     FlowVariable {
-                        location: ValueLocation::Argument(idx),
-                        expression: FlowVariableExpression::In
+                        location: Argument(idx),
+                        expression: In
                     }
                 )
             );
@@ -144,7 +152,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         self.arena.alloc(
             FlowVariable {
                 location: source.location.clone(),
-                expression: FlowVariableExpression::Phi(RefCell::new(vec![source]))
+                expression: Phi(RefCell::new(vec![source]))
             }
         )
     }
@@ -206,7 +214,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         }
         macro_rules! stack_top {
             () => { stack_top!(0) };
-            ($loc:expr) => { ValueLocation::Stack((state.stack.len() - $loc) as u8) };
+            ($loc:expr) => { DFValueLocation::Stack((state.stack.len() - $loc) as u8) };
         }
         macro_rules! unset {
             ($var:expr) => {
@@ -505,9 +513,9 @@ pub fn analyze_and_dump_dfa(instructions: &Vec<DMIR>, argument_count: u32) {
         }
         for variable in &effect.variables {
             let str = match &variable.expression {
-                FlowVariableExpression::Variable(other) => format!("%{} = %{}", var_ids[&variable], var_ids[other]),
-                FlowVariableExpression::Phi(other) => format!("%{} = φ[{}]", var_ids[&variable], other.borrow().iter().map(|var| format!("%{}", var_ids[var])).join(", ")),
-                FlowVariableExpression::In => format!("%{} = in", var_ids[&variable])
+                Variable(other) => format!("%{} = %{}", var_ids[&variable], var_ids[other]),
+                Phi(other) => format!("%{} = φ[{}]", var_ids[&variable], other.borrow().iter().map(|var| format!("%{}", var_ids[var])).join(", ")),
+                In => format!("%{} = in", var_ids[&variable])
             };
             annotator.add(idx, str)
         }
