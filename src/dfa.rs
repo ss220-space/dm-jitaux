@@ -1,12 +1,14 @@
-use std::cell::RefCell;
+use std::borrow::BorrowMut;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::env::var;
 use typed_arena::Arena;
 use crate::dmir::{DMIR};
 use DFValueLocation::*;
 use FlowVariableExpression::*;
+use std::fmt::Write;
 
 /// This module provides data-flow analysis capability
-
 #[derive(Clone)]
 struct InterpreterState<'t> {
     arguments: Vec<&'t FlowVariable<'t>>,
@@ -15,12 +17,12 @@ struct InterpreterState<'t> {
     cache: Option<&'t FlowVariable<'t>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DFValueLocation {
     Local(u32),
     Cache,
     Argument(u32),
-    Stack(u8)
+    Stack(u8),
 }
 
 impl InterpreterState<'_> {
@@ -46,6 +48,7 @@ pub enum FlowVariableExpression<'t> {
 pub struct FlowVariable<'t> {
     pub location: DFValueLocation,
     pub expression: FlowVariableExpression<'t>,
+    pub uses: RefCell<Vec<FlowVariableUse<'t>>>,
 }
 
 use std::hash::{Hash, Hasher};
@@ -54,6 +57,7 @@ use crate::cfa::{ControlFlowAnalyzer, ControlFlowGraph};
 use crate::dmir_annotate::Annotator;
 use crate::ref_count::ref_identity;
 ref_identity!(FlowVariable<'_>);
+ref_identity!(FlowVariableConsume<'_>);
 
 pub enum FlowVariableConsume<'t> {
     /// Consume without using variable
@@ -62,26 +66,46 @@ pub enum FlowVariableConsume<'t> {
     Out(&'t FlowVariable<'t>),
 }
 
-pub struct OperationEffect<'t> {
-    pub variables: Vec<&'t FlowVariable<'t>>,
-    pub consumes: Vec<FlowVariableConsume<'t>>,
-    pub stack_size: usize
+pub enum FlowVariableUse<'t> {
+    Consume(&'t FlowVariableConsume<'t>),
+    Move(&'t FlowVariable<'t>),
 }
 
-struct DataFlowAnalyzer<'t, 'graph> {
+pub struct OperationEffect<'t> {
+    pub variables: Vec<&'t FlowVariable<'t>>,
+    pub consumes: Vec<&'t FlowVariableConsume<'t>>,
+    pub stack_size: usize,
+}
+
+pub struct DataFlowAnalyzer<'t, 'graph> {
     arena: Arena<FlowVariable<'t>>,
-    control_flow_graph: &'graph ControlFlowGraph<'graph>
+    consumes_arena: Arena<FlowVariableConsume<'t>>,
+    control_flow_graph: &'graph ControlFlowGraph<'graph>,
 }
 
 impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
-    fn new(control_flow_graph: &'graph ControlFlowGraph<'graph>) -> Self {
+    pub fn new(control_flow_graph: &'graph ControlFlowGraph<'graph>) -> Self {
         Self {
             arena: Arena::new(),
-            control_flow_graph
+            consumes_arena: Arena::new(),
+            control_flow_graph,
         }
     }
 
-    fn update_state<'q>(variable: &'q FlowVariable<'q>, state: &mut InterpreterState<'q>) {
+    fn create_variable<'q>(
+        &'t self,
+        location: DFValueLocation,
+        expression: FlowVariableExpression<'t>,
+        state: &'q mut InterpreterState<'t>,
+    ) -> &'t FlowVariable<'t> {
+        let variable = self.arena.alloc(
+            FlowVariable {
+                location,
+                expression,
+                uses: RefCell::new(vec![]),
+            }
+        );
+
         match &variable.location {
             Stack(idx) => {
                 if *idx as usize == state.stack.len() {
@@ -100,9 +124,16 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                 state.arguments[*idx as usize] = variable;
             }
         }
+
+        match &variable.expression {
+            Variable(var) => var.uses.borrow_mut().push(FlowVariableUse::Move(variable)),
+            _ => {}
+        }
+
+        return variable;
     }
 
-    fn analyze(&'t mut self, instructions: &Vec<DMIR>, argument_count: u32) -> Vec<OperationEffect<'t>> {
+    pub fn analyze(&'t mut self, instructions: &Vec<DMIR>, argument_count: u32) -> Vec<OperationEffect<'t>> {
         let mut result = Vec::new();
         let mut state = InterpreterState::new();
         let mut blocks = HashMap::new();
@@ -112,7 +143,8 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                 self.arena.alloc(
                     FlowVariable {
                         location: Argument(idx),
-                        expression: In
+                        expression: In,
+                        uses: RefCell::new(vec![]),
                     }
                 )
             );
@@ -120,7 +152,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         result.push(OperationEffect {
             variables: state.arguments.clone(),
             consumes: vec![],
-            stack_size: 0
+            stack_size: 0,
         });
 
         for instruction in instructions {
@@ -130,21 +162,22 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         return result;
     }
 
-    fn epilogue_effect(state: &mut InterpreterState<'t>, effect: &mut OperationEffect<'t>) {
+    fn epilogue_effect(&'t self, state: &mut InterpreterState<'t>, effect: &mut OperationEffect<'t>) {
         for (_, var) in state.locals.drain() {
-            effect.consumes.push(FlowVariableConsume::Unset(var));
+            effect.consumes.push(self.create_consume(FlowVariableConsume::Unset(var)));
         }
         for var in state.arguments.drain(..) {
-            effect.consumes.push(FlowVariableConsume::Unset(var));
+            effect.consumes.push(self.create_consume(FlowVariableConsume::Unset(var)));
         }
         if let Some(var) = &state.cache.take() {
-            effect.consumes.push(FlowVariableConsume::Unset(var));
+            effect.consumes.push(self.create_consume(FlowVariableConsume::Unset(var)));
         }
     }
 
-    fn merge_phi(target: &FlowVariable<'t>, source: &'t FlowVariable<'t>) {
+    fn merge_phi(target: &'t FlowVariable<'t>, source: &'t FlowVariable<'t>) {
         match &target.expression {
             Phi(sources) => {
+                source.uses.borrow_mut().push(FlowVariableUse::Move(target));
                 sources.borrow_mut().push(source);
             }
             _ => panic!("unexpected target for Phi merging")
@@ -154,9 +187,21 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         self.arena.alloc(
             FlowVariable {
                 location: source.location.clone(),
-                expression: Phi(RefCell::new(vec![source]))
+                expression: Phi(RefCell::new(vec![source])),
+                uses: RefCell::new(vec![]),
             }
         )
+    }
+
+    fn create_consume(&'t self, consume: FlowVariableConsume<'t>) -> &'t FlowVariableConsume<'t> {
+        let allocated: &FlowVariableConsume = self.consumes_arena.alloc(consume);
+        match allocated {
+            FlowVariableConsume::Unset(variable) |
+            FlowVariableConsume::Out(variable) => {
+                variable.uses.borrow_mut().push(FlowVariableUse::Consume(allocated));
+            }
+        }
+        return allocated;
     }
 
     fn block_has_single_predecessor(&self, label: &str) -> bool {
@@ -167,7 +212,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         &'t self,
         current_state: &InterpreterState<'t>,
         blocks: &mut HashMap<String, InterpreterState<'t>>,
-        label: &str
+        label: &str,
     ) {
         let has_single_predecessor = self.block_has_single_predecessor(label);
         if has_single_predecessor {
@@ -188,7 +233,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                         arguments: current_state.arguments.iter().map(|var| self.make_phi(var)).collect(),
                         stack: current_state.stack.iter().map(|var| self.make_phi(var)).collect(),
                         locals: current_state.locals.iter().map(|(idx, var)| (*idx, self.make_phi(var))).collect(),
-                        cache: current_state.cache.map(|var| self.make_phi(var))
+                        cache: current_state.cache.map(|var| self.make_phi(var)),
                     }
                 });
         }
@@ -198,19 +243,13 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         &'t self,
         state: &'q mut InterpreterState<'t>,
         blocks: &'q mut HashMap<String, InterpreterState<'t>>,
-        instruction: &'q DMIR
+        instruction: &'q DMIR,
     ) -> OperationEffect<'t> {
         let mut effect = OperationEffect { variables: vec![], consumes: vec![], stack_size: 0 };
 
         macro_rules! mk_var {
             ($loc:expr => $expr:expr) => {
-                let v = self.arena.alloc(
-                    FlowVariable {
-                        location: $loc,
-                        expression: $expr
-                    }
-                );
-                Self::update_state(v, state);
+                let v = self.create_variable($loc, $expr, state);
                 effect.variables.push(v);
             };
         }
@@ -221,14 +260,14 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         macro_rules! unset {
             ($var:expr) => {
                 effect.consumes.push(
-                    FlowVariableConsume::Unset($var)
+                    self.create_consume(FlowVariableConsume::Unset($var))
                 )
             };
         }
         macro_rules! out {
             ($var:expr) => {
                 effect.consumes.push(
-                    FlowVariableConsume::Out($var)
+                    self.create_consume(FlowVariableConsume::Out($var))
                 )
             };
         }
@@ -275,7 +314,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                     self.merge_block(
                         state,
                         blocks,
-                        label
+                        label,
                     );
                 }
             }
@@ -355,7 +394,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
             }
             DMIR::Ret => {
                 out!(state.stack.pop().unwrap());
-                Self::epilogue_effect(state, &mut effect);
+                self.epilogue_effect(state, &mut effect);
             }
             DMIR::Not => {
                 out!(state.stack.pop().unwrap());
@@ -380,7 +419,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                 self.merge_block(
                     state,
                     blocks,
-                    label
+                    label,
                 );
             }
             DMIR::Dup => {
@@ -469,7 +508,7 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
             DMIR::UnsetLocal(idx) => unset!(state.locals.remove(idx).unwrap()),
             DMIR::UnsetCache => unset!(state.cache.take().unwrap()),
             DMIR::End => {
-                Self::epilogue_effect(state, &mut effect);
+                self.epilogue_effect(state, &mut effect);
             }
         }
 
@@ -486,24 +525,42 @@ pub fn analyze_and_dump_dfa(instructions: &Vec<DMIR>, argument_count: u32) {
 
     let r = analyzer.analyze(
         &instructions,
-        argument_count
+        argument_count,
     );
 
-    let mut next_var_id = 0u32;
+    dump_dfa(instructions, &r);
+}
+
+pub fn dump_dfa(instructions: &Vec<DMIR>, data_flow_info: &Vec<OperationEffect>) {
+
+    let mut next_id = 0u32;
     let mut var_ids = HashMap::new();
-    for effect in &r {
+    let mut consume_ids = HashMap::new();
+    let mut idx_by_id = HashMap::new();
+
+    for (idx, effect) in data_flow_info.iter().enumerate() {
         for variable in &effect.variables {
-            if !var_ids.contains_key(variable) {
-                var_ids.insert(variable, next_var_id);
-                next_var_id += 1
-            }
+            let entry = var_ids.entry(*variable).or_insert_with(|| {
+                let v = next_id;
+                next_id += 1;
+                v
+            });
+            idx_by_id.insert(*entry, idx);
+        }
+        for consume in &effect.consumes {
+            let entry = consume_ids.entry(*consume).or_insert_with(|| {
+                let v = next_id;
+                next_id += 1;
+                v
+            });
+            idx_by_id.insert(*entry, idx);
         }
     }
 
     let mut annotator = Annotator::new();
 
 
-    for (idx, effect) in r.iter().skip(1).enumerate() {
+    for (idx, effect) in data_flow_info.iter().skip(1).enumerate() {
         for consume in &effect.consumes {
             let str = match consume {
                 FlowVariableConsume::Unset(var) => {
@@ -516,12 +573,30 @@ pub fn analyze_and_dump_dfa(instructions: &Vec<DMIR>, argument_count: u32) {
             annotator.add(idx, str)
         }
         for variable in &effect.variables {
-            let str = match &variable.expression {
-                Variable(other) => format!("%{} = %{}", var_ids[&variable], var_ids[other]),
-                Phi(other) => format!("%{} = φ[{}]", var_ids[&variable], other.borrow().iter().map(|var| format!("%{}", var_ids[var])).join(", ")),
-                In => format!("%{} = in", var_ids[&variable])
+            let mut str = match &variable.expression {
+                Variable(other) => format!("%{} = %{}", var_ids[variable], var_ids[other]),
+                Phi(other) => format!("%{} = φ[{}]", var_ids[variable], other.borrow().iter().map(|var| format!("%{}", var_ids[var])).join(", ")),
+                In => format!("%{} = in", var_ids[variable])
             };
-            annotator.add(idx, str)
+
+            if variable.uses.borrow().len() > 0 {
+                write!(&mut str, " - used ({})",
+                       variable.uses.borrow().iter().format_with(
+                           ", ",
+                           |el, f| {
+                               match el {
+                                   FlowVariableUse::Consume(consume) => {
+                                       f(&format_args!("{}", idx_by_id[&consume_ids[consume]] - 1))
+                                   }
+                                   FlowVariableUse::Move(var) => {
+                                       f(&format_args!("{}", idx_by_id[&var_ids[var]] - 1))
+                                   }
+                               }
+                           },
+                       )
+                ).unwrap();
+            }
+            annotator.add(idx, str);
         }
     }
 
