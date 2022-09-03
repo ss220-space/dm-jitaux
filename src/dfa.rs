@@ -10,11 +10,11 @@ use std::fmt::Write;
 
 /// This module provides data-flow analysis capability
 #[derive(Clone)]
-struct InterpreterState<'t> {
-    arguments: Vec<&'t FlowVariable<'t>>,
-    stack: Vec<&'t FlowVariable<'t>>,
-    locals: HashMap<u32, &'t FlowVariable<'t>>,
-    cache: Option<&'t FlowVariable<'t>>,
+pub struct InterpreterState<'t> {
+    pub arguments: Vec<&'t FlowVariable<'t>>,
+    pub stack: Vec<&'t FlowVariable<'t>>,
+    pub locals: HashMap<u32, &'t FlowVariable<'t>>,
+    pub cache: Option<&'t FlowVariable<'t>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -69,6 +69,7 @@ pub enum FlowVariableConsume<'t> {
 pub enum FlowVariableUse<'t> {
     Consume(&'t FlowVariableConsume<'t>),
     Move(&'t FlowVariable<'t>),
+    Rename(&'t FlowVariable<'t>)
 }
 
 pub struct OperationEffect<'t> {
@@ -81,6 +82,35 @@ pub struct DataFlowAnalyzer<'t, 'graph> {
     arena: Arena<FlowVariable<'t>>,
     consumes_arena: Arena<FlowVariableConsume<'t>>,
     control_flow_graph: &'graph ControlFlowGraph<'graph>,
+}
+
+pub struct DataFlowAnalyzerState<'t, 'graph> {
+    analyzer: &'t DataFlowAnalyzer<'t, 'graph>,
+    state: InterpreterState<'t>,
+    blocks: HashMap<String, InterpreterState<'t>>,
+}
+
+impl<'t, 'graph> DataFlowAnalyzerState<'t, 'graph> {
+    pub fn analyze_instruction(&mut self, ir: &DMIR) -> OperationEffect<'t> {
+        self.analyzer.analyze_instruction(
+            &mut self.state,
+            &mut self.blocks,
+            ir
+        )
+    }
+
+    pub fn state<'q>(&'q self) -> &'q InterpreterState<'t> {
+        &self.state
+    }
+
+    pub fn stack_top<'q>(&'q self, idx: usize) -> &'t FlowVariable<'t> {
+        let stack_size = self.state.stack.len();
+        self.state.stack[stack_size - idx - 1]
+    }
+
+    pub fn rename<'q>(&'q mut self, variable: &'t FlowVariable<'t>) -> &'t FlowVariable<'t> {
+
+    }
 }
 
 impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
@@ -133,10 +163,8 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
         return variable;
     }
 
-    pub fn analyze(&'t mut self, instructions: &Vec<DMIR>, argument_count: u32) -> Vec<OperationEffect<'t>> {
-        let mut result = Vec::new();
+    pub fn enter_function(&'t self,  argument_count: u32) -> (OperationEffect<'t>, DataFlowAnalyzerState<'t, 'graph>) {
         let mut state = InterpreterState::new();
-        let mut blocks = HashMap::new();
 
         for idx in 0..argument_count {
             state.arguments.push(
@@ -149,17 +177,17 @@ impl<'t, 'graph> DataFlowAnalyzer<'t, 'graph> {
                 )
             );
         }
-        result.push(OperationEffect {
+        let enter_effect = OperationEffect {
             variables: state.arguments.clone(),
             consumes: vec![],
             stack_size: 0,
-        });
+        };
 
-        for instruction in instructions {
-            result.push(self.analyze_instruction(&mut state, &mut blocks, instruction));
-        }
-
-        return result;
+        (enter_effect, DataFlowAnalyzerState {
+            analyzer: &self,
+            state,
+            blocks: Default::default()
+        })
     }
 
     fn epilogue_effect(&'t self, state: &mut InterpreterState<'t>, effect: &mut OperationEffect<'t>) {
@@ -523,12 +551,12 @@ pub fn analyze_and_dump_dfa(instructions: &Vec<DMIR>, argument_count: u32) {
 
     let mut analyzer = DataFlowAnalyzer::new(&graph);
 
-    let r = analyzer.analyze(
-        &instructions,
-        argument_count,
-    );
+    // let r = analyzer.analyze(
+    //     &instructions,
+    //     argument_count,
+    // );
 
-    dump_dfa(instructions, &r);
+    // dump_dfa(instructions, &r);
 }
 
 pub fn dump_dfa(instructions: &Vec<DMIR>, data_flow_info: &Vec<OperationEffect>) {
